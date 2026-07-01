@@ -72,3 +72,9 @@ class Role(str, Enum):
 class ModelStatus(str, Enum):
     ACTIVE = "active"
     DISAPPEARED = "disappeared"
+
+
+class AnswerSource(str, Enum):
+    AUTO = "auto"  # deterministic fact from the cloud API — accepted
+    SUGGESTED = "suggested"  # from provider docs — needs human confirmation
+    HUMAN = "human"  # set or confirmed by a reviewer

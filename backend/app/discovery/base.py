@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
 
@@ -30,6 +30,9 @@ class DiscoveredModel:
     provisioning_state: str | None = None
     cloud_created_at: datetime | None = None
     cloud_last_modified_at: datetime | None = None
+    # Cloud resource properties the auto-answer engine reads (region, content
+    # filter, network exposure, encryption, versioning, etc.).
+    facts: dict = field(default_factory=dict)
 
     def label(self) -> str:
         v = f":{self.model_version}" if self.model_version else ""

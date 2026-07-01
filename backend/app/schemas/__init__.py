@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.nist import control_title
 from app.services.scoring import TIER_LABELS
 
 
@@ -45,6 +46,44 @@ class SourceCreate(Schema):
     scope: str
     credential_ref: str | None = None
     config: dict | None = None
+
+
+class PolicyOut(ORMModel):
+    approved_regions: dict[str, list[str]]  # {"azure": [...], "gcp": [...]}
+    updated_at: datetime
+
+
+class PolicyUpdate(Schema):
+    approved_regions: dict[str, list[str]]
+
+
+class FrameworkReferenceOut(Schema):
+    label: str | None = None
+    doc: str | None = None
+    url: str | None = None
+
+
+class FrameworkStatusOut(Schema):
+    # What the questions implement (from the questionnaire — single source of truth).
+    id: str
+    name: str
+    rmf_version: str | None
+    effective_date: str | None
+    references: list[FrameworkReferenceOut]
+    questionnaire_version: int
+    control_count: int
+    # Admin review-freshness record.
+    last_reviewed_at: datetime | None
+    reviewed_by: str | None
+    review_interval_days: int
+    next_review_due: datetime | None
+    overdue: bool
+    notes: str | None
+
+
+class FrameworkReviewIn(Schema):
+    notes: str | None = None
+    interval_days: int | None = None
 
 
 class DiscoveredModelOut(Schema):
@@ -165,6 +204,7 @@ class ControlOut(ORMModel):
     id: uuid.UUID
     control_key: str
     control_id: str
+    nist_control: str | None = None  # e.g. "GOVERN 6 — Policies ... supply chain."
     nist_function: str
     question_text: str
     evidence_needed: str | None
@@ -176,6 +216,16 @@ class ControlOut(ORMModel):
     evidence_note: str | None
     answered_at: datetime | None
     answered_by_id: uuid.UUID | None
+    answer_source: str | None
+    auto_answer: str | None
+    auto_rationale: str | None
+    auto_confidence: str | None
+
+    @model_validator(mode="after")
+    def _fill_nist_control(self) -> "ControlOut":
+        if self.nist_control is None:
+            self.nist_control = control_title(self.control_id)
+        return self
 
 
 class ReviewOut(ORMModel):

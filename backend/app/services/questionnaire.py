@@ -33,7 +33,12 @@ class ControlTemplate:
 class Questionnaire:
     version: int
     framework: str
+    meta: dict  # framework_meta: name, rmf_version, effective_date, references
     controls: tuple[ControlTemplate, ...]
+
+    @property
+    def control_count(self) -> int:
+        return len(self.controls)
 
     def as_snapshot(self) -> dict:
         """Serializable snapshot frozen into a Review for auditability."""
@@ -83,7 +88,12 @@ def load_questionnaire(path: Path | None = None) -> Questionnaire:
         )
         for c in raw["controls"]
     )
-    q = Questionnaire(version=raw["version"], framework=raw["framework"], controls=controls)
+    q = Questionnaire(
+        version=raw["version"],
+        framework=raw["framework"],
+        meta=raw.get("framework_meta", {}) or {},
+        controls=controls,
+    )
     _validate(q)
     return q
 

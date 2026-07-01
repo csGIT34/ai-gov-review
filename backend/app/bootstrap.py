@@ -35,3 +35,8 @@ def seed_default_sources(db: Session) -> None:
 def seed_dev_data(db: Session) -> None:
     seed_dev_users(db)
     seed_default_sources(db)
+    # Ensure the governance policy row exists (seeded with default regions).
+    from app.services.policy import get_policy
+
+    get_policy(db)
+    db.commit()

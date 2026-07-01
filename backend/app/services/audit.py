@@ -35,8 +35,11 @@ def record(
     after: dict | None = None,
     request_ip: str | None = None,
 ) -> AuditLog:
+    # Deterministic predecessor for the hash chain: newest ts, then id as a stable
+    # tiebreak so same-timestamp rows don't produce a nondeterministic prev.
+    # (Full concurrency-safety would require a monotonic sequence + row lock.)
     prev = db.execute(
-        select(AuditLog.hash_self).order_by(AuditLog.ts.desc()).limit(1)
+        select(AuditLog.hash_self).order_by(AuditLog.ts.desc(), AuditLog.id.desc()).limit(1)
     ).scalar_one_or_none()
 
     payload = {

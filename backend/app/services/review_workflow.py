@@ -24,7 +24,7 @@ from app.models import (
     RiskScore,
     utcnow,
 )
-from app.services import audit
+from app.services import audit, autoanswer, policy
 from app.services.errors import ConflictError, NotFoundError, ValidationError
 from app.services.questionnaire import Questionnaire, get_questionnaire
 from app.services.scoring import RiskResult, ScoredControl, score_controls
@@ -55,20 +55,42 @@ def open_review(
     db.add(review)
     db.flush()  # assign review.id
 
+    # Auto-answer machine-answerable controls from the model's cloud facts,
+    # against the org's (admin-configured) governance policy.
+    auto = autoanswer.collect(
+        model.facts, model.vendor, policy.resolve_policy(db, model), model.cloud
+    )
+    auto_count = 0
+    suggested_count = 0
     for c in q.controls:
-        db.add(
-            ControlResponse(
-                review_id=review.id,
-                control_key=c.key,
-                control_id=c.control_id,
-                nist_function=c.nist_function,
-                question_text=c.question,
-                evidence_needed=c.evidence_needed,
-                weight=c.weight,
-                gai_categories=list(c.gai_categories),
-                is_ko=c.is_ko,
-            )
+        cr = ControlResponse(
+            review_id=review.id,
+            control_key=c.key,
+            control_id=c.control_id,
+            nist_function=c.nist_function,
+            question_text=c.question,
+            evidence_needed=c.evidence_needed,
+            weight=c.weight,
+            gai_categories=list(c.gai_categories),
+            is_ko=c.is_ko,
         )
+        r = auto.get(c.key)
+        if r is not None:
+            cr.answer = r.answer
+            cr.answer_source = r.source
+            cr.auto_answer = r.answer
+            cr.auto_rationale = r.rationale
+            cr.auto_confidence = r.confidence
+            cr.evidence_url = r.evidence_url
+            cr.answered_at = utcnow()
+            if r.source == "auto":
+                auto_count += 1
+            else:
+                suggested_count += 1
+        elif c.key in autoanswer.MANUAL_GUIDANCE:
+            # No cloud signal — leave unanswered, but attach guidance for the reviewer.
+            cr.auto_rationale = autoanswer.MANUAL_GUIDANCE[c.key]
+        db.add(cr)
 
     model.current_review_id = review.id
     db.flush()
@@ -79,7 +101,13 @@ def open_review(
         entity_id=review.id,
         actor_id=actor_id,
         actor_type="user" if actor_id else "system",
-        after={"model_id": str(model.id), "trigger": trigger, "controls": len(q.controls)},
+        after={
+            "model_id": str(model.id),
+            "trigger": trigger,
+            "controls": len(q.controls),
+            "auto_answered": auto_count,
+            "suggested": suggested_count,
+        },
         request_ip=request_ip,
     )
     return review
@@ -114,12 +142,14 @@ def answer_control(
     if cr is None or cr.review_id != review.id:
         raise NotFoundError("Control response not found for this review")
 
-    before = {"answer": cr.answer, "evidence_url": cr.evidence_url}
+    before = {"answer": cr.answer, "evidence_url": cr.evidence_url, "source": cr.answer_source}
     cr.answer = answer
     cr.evidence_url = evidence_url
     cr.evidence_note = evidence_note
     cr.answered_by_id = actor_id
     cr.answered_at = utcnow()
+    # A human touching a control (confirming a suggestion or overriding) makes it human-owned.
+    cr.answer_source = "human"
 
     # First answer moves the review into IN_REVIEW.
     if review.state == ReviewState.PENDING_REVIEW.value:
@@ -141,6 +171,11 @@ def answer_control(
 
 def unanswered_controls(review: Review) -> list[ControlResponse]:
     return [c for c in review.controls if c.answer is None]
+
+
+def unconfirmed_controls(review: Review) -> list[ControlResponse]:
+    """Suggested (doc-based) answers awaiting human confirmation."""
+    return [c for c in review.controls if c.answer is not None and c.answer_source == "suggested"]
 
 
 def _scored_controls(review: Review) -> list[ScoredControl]:
@@ -209,10 +244,14 @@ def submit_review(
         raise ConflictError(f"Cannot submit a review in state '{review.state}'.")
 
     missing = unanswered_controls(review)
-    if missing:
+    pending = unconfirmed_controls(review)
+    if missing or pending:
         raise ValidationError(
-            "All controls must be answered before submitting.",
-            details={"unanswered": [c.control_key for c in missing]},
+            "All controls must be answered and suggested answers confirmed before submitting.",
+            details={
+                "unanswered": [c.control_key for c in missing],
+                "needs_confirmation": [c.control_key for c in pending],
+            },
         )
 
     review.state = ReviewState.SCORED.value

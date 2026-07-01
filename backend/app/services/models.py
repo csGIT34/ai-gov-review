@@ -45,6 +45,7 @@ def upsert_model(
         existing.last_seen_at = now
         existing.region = discovered.region or existing.region
         existing.provisioning_state = discovered.provisioning_state or existing.provisioning_state
+        existing.facts = discovered.facts or existing.facts
         existing.status = "active"
         db.flush()
         return existing, False
@@ -66,6 +67,7 @@ def upsert_model(
         provisioning_state=discovered.provisioning_state,
         cloud_created_at=discovered.cloud_created_at,
         cloud_last_modified_at=discovered.cloud_last_modified_at,
+        facts=discovered.facts,
         first_seen_at=now,
         last_seen_at=now,
         status="active",

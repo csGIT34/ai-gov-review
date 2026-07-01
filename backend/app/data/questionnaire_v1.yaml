@@ -13,6 +13,17 @@
 # filtering, data leaving the approved region.
 version: 1
 framework: "nist-ai-rmf-1.0+genai-600-1"
+framework_meta:
+  name: "NIST AI Risk Management Framework 1.0 + Generative AI Profile"
+  rmf_version: "1.0"
+  effective_date: "2024-07-26"   # NIST AI 600-1 publication date
+  references:
+    - label: "AI RMF Core"
+      doc: "NIST AI 100-1"
+      url: "https://www.nist.gov/itl/ai-risk-management-framework"
+    - label: "Generative AI Profile"
+      doc: "NIST AI 600-1"
+      url: "https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf"
 controls:
   - key: model_card
     control_id: "MAP 4.1"

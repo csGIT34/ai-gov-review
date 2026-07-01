@@ -97,6 +97,11 @@ class Model(UUIDPKMixin, TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
 
+    # Cloud resource properties used to auto-answer controls (region, content
+    # filter, network exposure, encryption, versioning, etc.). Populated by the
+    # discovery driver; drives the auto-answer engine.
+    facts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # Denormalized pointers for fast list views (no FK to avoid a cycle).
     current_review_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     latest_score: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -172,6 +177,13 @@ class ControlResponse(UUIDPKMixin, TimestampMixin, Base):
     )
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Auto-answer provenance. answer_source: auto (deterministic fact, accepted) |
+    # suggested (from provider docs, needs human confirmation) | human.
+    answer_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    auto_answer: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    auto_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    auto_confidence: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
     review: Mapped["Review"] = relationship(back_populates="controls")
 
 
@@ -222,6 +234,29 @@ class ApprovalDecision(UUIDPKMixin, TimestampMixin, Base):
     override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     review: Mapped["Review"] = relationship(back_populates="decisions")
+
+
+class GovernancePolicy(UUIDPKMixin, TimestampMixin, Base):
+    """Singleton org policy for auto-answer determinations (admin-editable).
+
+    Holds the policy inputs the auto-answer engine compares cloud facts against —
+    currently the approved data-residency regions. A DiscoverySource may override
+    per scope via its `config`.
+    """
+
+    __tablename__ = "governance_policy"
+
+    approved_regions: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+
+    # Framework-freshness governance: when the questionnaire was last confirmed
+    # to still match the current NIST release, by whom, and how often it's due.
+    framework_last_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    framework_reviewed_by_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    framework_review_interval_days: Mapped[int] = mapped_column(Integer, default=180, nullable=False)
+    framework_review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class AuditLog(UUIDPKMixin, Base):
