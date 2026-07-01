@@ -154,9 +154,16 @@ export default function ReviewDetail() {
               {items.map((c) => (
                 <div className="control" key={c.id}>
                   <div className="q">{c.question_text}</div>
-                  <div className="nist" title={c.nist_control || ""}>
-                    NIST AI RMF · {c.nist_control || c.control_id}
+                  <div className="nist">
+                    <strong>{c.control_id}</strong>
+                    {c.nist_control ? ` — ${c.nist_control.replace(/^[A-Z]+ [\d.]+ — /, "")}` : ""}
+                    {c.nist_url && (
+                      <a href={c.nist_url} target="_blank" rel="noreferrer"> · NIST Playbook ↗</a>
+                    )}
                   </div>
+                  {c.evidence_needed && (
+                    <div className="evidence-hint">Evidence to look for: {c.evidence_needed}</div>
+                  )}
                   <div className="meta">
                     <span className="badge" title={c.nist_control || "NIST AI RMF control"}>{c.control_id}</span>
                     <Weight w={c.weight} />

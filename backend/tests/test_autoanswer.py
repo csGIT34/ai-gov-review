@@ -115,6 +115,19 @@ def test_review_opens_prefilled(client):
     assert all(c["nist_control"] for c in controls)
 
 
+def test_controls_carry_nist_reference_and_evidence(client):
+    rid = _open_gpt4o(client)
+    controls = client.get(f"{API}/reviews/{rid}/controls", headers=REVIEWER).json()
+    # Every control has the exact NIST subcategory statement, a Playbook link, and
+    # the "evidence to look for" hint.
+    assert all(c["nist_control"] for c in controls)
+    assert all(c["nist_url"] and "airc.nist.gov" in c["nist_url"] for c in controls)
+    assert all(c["evidence_needed"] for c in controls)
+    gov = next(c for c in controls if c["control_id"] == "GOVERN 1.1")
+    assert "Legal and regulatory requirements" in gov["nist_control"]
+    assert gov["nist_url"].endswith("/govern/")
+
+
 def test_submit_blocked_until_confirmed_and_manual_answered(client):
     rid = _open_gpt4o(client)
     blocked = client.post(f"{API}/reviews/{rid}/submit", headers=REVIEWER)

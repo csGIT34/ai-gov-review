@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.nist import control_title
+from app.nist import control_title, control_url
 from app.services.scoring import TIER_LABELS
 
 
@@ -218,7 +218,8 @@ class ControlOut(ORMModel):
     id: uuid.UUID
     control_key: str
     control_id: str
-    nist_control: str | None = None  # e.g. "GOVERN 6 — Policies ... supply chain."
+    nist_control: str | None = None  # exact subcategory statement, e.g. "GOVERN 6.1 — ..."
+    nist_url: str | None = None  # NIST Playbook link for the control's function
     nist_function: str
     question_text: str
     evidence_needed: str | None
@@ -239,6 +240,8 @@ class ControlOut(ORMModel):
     def _fill_nist_control(self) -> "ControlOut":
         if self.nist_control is None:
             self.nist_control = control_title(self.control_id)
+        if self.nist_url is None:
+            self.nist_url = control_url(self.control_id)
         return self
 
 

@@ -51,6 +51,43 @@ def latest_release() -> dict:
     return max(KNOWN_RELEASES, key=lambda r: r["published"])
 
 
+# Verbatim NIST AI RMF 1.0 subcategory statements (the exact control text) for the
+# subcategories used by the questionnaire. Source: AI RMF Core (NIST AI 100-1) /
+# airc.nist.gov 5-sec-core.
+SUBCATEGORY_TEXT: dict[str, str] = {
+    "GOVERN 1.1": "Legal and regulatory requirements involving AI are understood, managed, and documented.",
+    "GOVERN 1.5": "Ongoing monitoring and periodic review of the risk management process and its outcomes are planned, and organizational roles and responsibilities are clearly defined, including determining the frequency of periodic review.",
+    "GOVERN 4.1": "Organizational policies and practices are in place to foster a critical thinking and safety-first mindset in the design, development, deployment, and uses of AI systems to minimize negative impacts.",
+    "GOVERN 6.1": "Policies and procedures are in place that address AI risks associated with third-party entities, including risks of infringement of a third party's intellectual property or other rights.",
+    "MAP 1.1": "Intended purposes, potentially beneficial uses, context-specific laws, norms and expectations, and prospective settings in which the AI system will be deployed are understood and documented.",
+    "MAP 2.1": "The specific tasks and methods used to implement the tasks that the AI system will support are defined (e.g., classifiers, generative models, recommenders).",
+    "MAP 4.1": "Approaches for mapping AI technology and legal risks of its components – including the use of third-party data or software – are in place, followed, and documented.",
+    "MAP 4.2": "Internal risk controls for components of the AI system, including third-party AI technologies, are identified and documented.",
+    "MAP 5.1": "Likelihood and magnitude of each identified impact (both potentially beneficial and harmful) based on expected use, past uses of AI systems in similar contexts, public incident reports, feedback, or other data are identified and documented.",
+    "MEASURE 2.3": "AI system performance or assurance criteria are measured qualitatively or quantitatively and demonstrated for conditions similar to deployment setting(s).",
+    "MEASURE 2.4": "The functionality and behavior of the AI system and its components – as identified in the MAP function – are monitored when in production.",
+    "MEASURE 2.6": "AI system is evaluated regularly for safety risks – as identified in the MAP function. The AI system to be deployed is demonstrated to be safe, its residual negative risk does not exceed the risk tolerance, and it can fail safely.",
+    "MEASURE 2.7": "AI system security and resilience – as identified in the MAP function – are evaluated and documented.",
+    "MEASURE 2.9": "The AI model is explained, validated, and documented, and AI system output is interpreted within its context – as identified in the MAP function – to inform responsible use and governance.",
+    "MEASURE 2.10": "Privacy risk of the AI system – as identified in the MAP function – is examined and documented.",
+    "MEASURE 2.11": "Fairness and bias – as identified in the MAP function – are evaluated and results are documented.",
+    "MEASURE 2.12": "Environmental impact and sustainability of AI model training and management activities – as identified in the MAP function – are assessed and documented.",
+    "MEASURE 3.1": "Approaches, personnel, and documentation are in place to regularly identify and track existing, unanticipated, and emergent AI risks based on factors such as intended and actual performance.",
+    "MANAGE 2.3": "Procedures are followed to respond to and recover from a previously unknown risk when it is identified.",
+    "MANAGE 3.1": "AI risks and benefits from third-party resources are regularly monitored, and risk controls are applied and documented.",
+    "MANAGE 4.1": "Post-deployment AI system monitoring plans are implemented, including mechanisms for capturing and evaluating input from users and other relevant AI actors, appeal and override, decommissioning, incident response, recovery, and change management.",
+}
+
+# NIST AI RMF Playbook (per-function suggested actions). No reliable per-subcategory
+# anchors exist, so we link at the function level.
+PLAYBOOK_URLS: dict[str, str] = {
+    "GOVERN": "https://airc.nist.gov/airmf-resources/playbook/govern/",
+    "MAP": "https://airc.nist.gov/airmf-resources/playbook/map/",
+    "MEASURE": "https://airc.nist.gov/airmf-resources/playbook/measure/",
+    "MANAGE": "https://airc.nist.gov/airmf-resources/playbook/manage/",
+}
+
+
 def category_of(control_id: str) -> str:
     """'GOVERN 6.1' -> 'GOVERN 6'."""
     parts = control_id.split()
@@ -59,7 +96,22 @@ def category_of(control_id: str) -> str:
     return f"{parts[0]} {parts[1].split('.')[0]}"
 
 
+def function_of(control_id: str) -> str:
+    return control_id.split()[0] if control_id else ""
+
+
 def control_title(control_id: str) -> str | None:
-    """A human notation for a control, e.g. 'GOVERN 6 — Policies ... supply chain.'"""
+    """The exact NIST subcategory statement, e.g. 'GOVERN 6.1 — Policies ...'.
+
+    Falls back to the parent category summary if the subcategory text is unknown.
+    """
+    text = SUBCATEGORY_TEXT.get(control_id)
+    if text:
+        return f"{control_id} — {text}"
     summary = CATEGORY_SUMMARIES.get(category_of(control_id))
     return f"{category_of(control_id)} — {summary}" if summary else None
+
+
+def control_url(control_id: str) -> str | None:
+    """The NIST Playbook URL for this control's function."""
+    return PLAYBOOK_URLS.get(function_of(control_id))

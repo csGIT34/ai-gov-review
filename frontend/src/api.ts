@@ -151,6 +151,7 @@ export interface Control {
   control_key: string;
   control_id: string;
   nist_control: string | null;
+  nist_url: string | null;
   nist_function: string;
   question_text: string;
   evidence_needed: string | null;

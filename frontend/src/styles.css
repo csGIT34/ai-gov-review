@@ -117,7 +117,10 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .control { border: 1px solid var(--border); border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 0.6rem; background: var(--panel); }
 .control .q { font-weight: 600; margin-bottom: 0.2rem; }
-.control .nist { font-size: 0.72rem; color: var(--accent); margin-bottom: 0.45rem; opacity: 0.85; }
+.control .nist { font-size: 0.75rem; color: var(--muted); line-height: 1.35; margin-bottom: 0.4rem; }
+.control .nist strong { color: var(--text); }
+.control .nist a { color: var(--accent); white-space: nowrap; }
+.evidence-hint { font-size: 0.8rem; color: var(--muted); background: var(--panel2); border-left: 3px solid var(--accent); padding: 0.35rem 0.6rem; border-radius: 4px; margin: 0.1rem 0 0.55rem; }
 .control .meta { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem; }
 .answers { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .answers button { padding: 0.35rem 0.7rem; background: var(--panel2); border: 1px solid var(--border); color: var(--text); }
