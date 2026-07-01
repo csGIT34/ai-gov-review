@@ -29,6 +29,28 @@ CATEGORY_SUMMARIES: dict[str, str] = {
 }
 
 
+# Maintained registry of known NIST AI RMF releases. UPDATE THIS when NIST ships a
+# new version (e.g. an AI RMF 2.0 or a revised GenAI Profile): add an entry with a
+# later `published` date. The "Check for updates" button compares the version the
+# questionnaire implements against the latest entry here — no live scraping, because
+# NIST publishes no machine-readable version feed.
+KNOWN_RELEASES: list[dict] = [
+    {
+        "version": "1.0",
+        "label": "AI RMF 1.0 + Generative AI Profile",
+        "published": "2024-07-26",
+        "url": "https://www.nist.gov/itl/ai-risk-management-framework",
+        "notes": "AI RMF Core (NIST AI 100-1, Jan 2023) + Generative AI Profile "
+        "(NIST AI 600-1, Jul 2024).",
+    },
+]
+
+
+def latest_release() -> dict:
+    """The newest known NIST AI RMF release (by publication date)."""
+    return max(KNOWN_RELEASES, key=lambda r: r["published"])
+
+
 def category_of(control_id: str) -> str:
     """'GOVERN 6.1' -> 'GOVERN 6'."""
     parts = control_id.split()

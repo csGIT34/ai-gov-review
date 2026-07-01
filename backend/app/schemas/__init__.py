@@ -79,11 +79,25 @@ class FrameworkStatusOut(Schema):
     next_review_due: datetime | None
     overdue: bool
     notes: str | None
+    # Registry comparison: is a newer NIST release known than the one we implement?
+    update_available: bool
+    latest_known_version: str
 
 
 class FrameworkReviewIn(Schema):
     notes: str | None = None
     interval_days: int | None = None
+
+
+class UpdateCheckOut(Schema):
+    implemented_version: str
+    latest_known_version: str
+    latest_published: str
+    latest_label: str
+    latest_url: str
+    latest_notes: str
+    up_to_date: bool
+    checked_at: datetime
 
 
 class DiscoveredModelOut(Schema):

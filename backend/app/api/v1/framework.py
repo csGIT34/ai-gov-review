@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import client_ip, db_session, get_current_user, require_admin
 from app.models import GovernancePolicy, User, utcnow
-from app.schemas import FrameworkReviewIn, FrameworkStatusOut
+from app.nist import latest_release
+from app.schemas import FrameworkReviewIn, FrameworkStatusOut, UpdateCheckOut
 from app.services import policy as policy_svc
 from app.services.questionnaire import get_questionnaire
 
@@ -34,6 +35,7 @@ def _status(db: Session, policy: GovernancePolicy) -> FrameworkStatusOut:
         next_due = last + timedelta(days=policy.framework_review_interval_days)
         overdue = utcnow() > next_due
 
+    latest = latest_release()
     return FrameworkStatusOut(
         id=q.framework,
         name=meta.get("name", q.framework),
@@ -48,6 +50,8 @@ def _status(db: Session, policy: GovernancePolicy) -> FrameworkStatusOut:
         next_review_due=next_due,
         overdue=overdue,
         notes=policy.framework_review_notes,
+        update_available=meta.get("rmf_version") != latest["version"],
+        latest_known_version=latest["version"],
     )
 
 
@@ -56,6 +60,25 @@ def get_framework(
     db: Session = Depends(db_session), _: User = Depends(get_current_user)
 ) -> FrameworkStatusOut:
     return _status(db, policy_svc.get_policy(db))
+
+
+@router.get("/check-updates", response_model=UpdateCheckOut)
+def check_updates(_: User = Depends(get_current_user)) -> UpdateCheckOut:
+    """Compare the version the questionnaire implements against the known-latest
+    NIST release (a maintained registry — NIST has no version API)."""
+    q = get_questionnaire()
+    implemented = q.meta.get("rmf_version") or ""
+    latest = latest_release()
+    return UpdateCheckOut(
+        implemented_version=implemented,
+        latest_known_version=latest["version"],
+        latest_published=latest["published"],
+        latest_label=latest["label"],
+        latest_url=latest["url"],
+        latest_notes=latest["notes"],
+        up_to_date=implemented == latest["version"],
+        checked_at=utcnow(),
+    )
 
 
 @router.post("/reviewed", response_model=FrameworkStatusOut)

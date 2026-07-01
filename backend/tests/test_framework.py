@@ -22,6 +22,20 @@ def test_framework_status_reports_nist_version(client):
     assert f["review_interval_days"] == 180
 
 
+def test_framework_status_includes_update_flag(client):
+    f = client.get(f"{API}/framework", headers=REVIEWER).json()
+    assert f["update_available"] is False
+    assert f["latest_known_version"] == "1.0"
+
+
+def test_check_updates(client):
+    c = client.get(f"{API}/framework/check-updates", headers=REVIEWER).json()
+    assert c["up_to_date"] is True
+    assert c["implemented_version"] == "1.0"
+    assert c["latest_known_version"] == "1.0"
+    assert c["latest_url"].startswith("https://www.nist.gov")
+
+
 def test_reviewer_cannot_mark_reviewed(client):
     r = client.post(f"{API}/framework/reviewed", headers=REVIEWER, json={})
     assert r.status_code == 403
