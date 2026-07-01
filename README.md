@@ -1,36 +1,126 @@
 # AI Governance Review
 
 Containerized web app to run **AI governance reviews** of AI models hosted in your
-cloud providers (Azure + GCP). It discovers models on demand, runs a
-**NIST AI RMF 1.0 (+ GenAI Profile, NIST AI 600-1)** questionnaire against each,
-computes a **risk score + tier**, and routes it through an **approval gate** with
-sign-off and an **immutable audit trail**.
+cloud providers (Azure + GCP). It discovers models on demand, **auto-answers the
+machine-answerable questions from cloud facts**, runs a
+**NIST AI RMF 1.0 (+ GenAI Profile, NIST AI 600-1)** questionnaire, computes a
+**risk score + tier**, and routes it through an **approval gate** with sign-off and
+an **immutable audit trail**.
 
-> Status: **backend milestones M0–M4 complete and tested.** Discovery uses a stub
-> driver (real Azure/GCP land in M5/M6); the React SPA lands in M8; OIDC auth in M10.
+> Status: backend core, the auto-answer engine, per-cloud residency policy, an admin
+> config dashboard, framework-version tracking, and the React SPA are **built and
+> tested**. Cloud **discovery is still a stub** (real Azure/GCP = M5/M6), and auth is a
+> **dev header** (OIDC = M10).
 
 ## How it works
 
 ```
- discover (dropdowns)      review                score            approval gate
- cloud → vendor → model → NIST questionnaire → risk score/tier → approve/reject
-                          (23 controls)         + gates          + sign-off + audit
+ discover ──▶ auto-answer ──▶ review ─────────▶ score ───────▶ approval gate
+ cloud →       from cloud      reviewer confirms  0-100 + tier   approve / reject
+ vendor →      facts +         suggestions &      + gates        + sign-off + audit
+ model         provider docs   answers the rest
 ```
 
 - **Pull-based discovery.** No background polling. When a reviewer starts a review,
   cascading dropdowns (cloud source → vendor → model) are populated on demand from
-  the cloud APIs (cached). Read-only; the app never writes to any cloud.
-- **Scoring.** Per-control weight × (1 − answer), rolled to a 0–100 score and four
-  tiers. Two gate overrides: any **high-weight** No/Unknown → min **Tier 3**; any
-  **knock-out** control fail → **Tier 4**.
-- **Approval gate.** Server-enforced by tier. Tier 4 / KO failures are blocked
-  unless an **admin overrides** with a mandatory reason (separately audited).
-- **Audit.** Append-only log (Postgres trigger blocks UPDATE/DELETE), hash-chained;
+  the cloud APIs (cached). Read-only — the app never writes to any cloud.
+- **Auto-answer.** When the review opens, the engine pre-answers every control it can
+  from the model's cloud facts, so the reviewer only handles judgment calls. See
+  [How auto-answer works](#how-auto-answer-works) below.
+- **Scoring.** Per-control `weight × (1 − answer)`, rolled to a 0–100 risk score and
+  four tiers. Two gate overrides: any **high-weight** No/Unknown → min **Tier 3**; any
+  **knock-out** control failure → **Tier 4**.
+- **Approval gate.** Server-enforced by tier. Tier 4 / KO failures are blocked unless
+  an **admin overrides** with a mandatory reason (separately audited).
+- **Audit.** Append-only log (a Postgres trigger blocks UPDATE/DELETE), hash-chained;
   every decision is bound to the exact score snapshot it was made against.
+
+## How auto-answer works
+
+The whole point of the tool: **most of the 23 NIST questions can be answered from the
+cloud provider's own data** — you shouldn't hand-answer "what region is this deployed
+in?" So when a review opens, the engine pre-fills what it can and leaves only the
+genuine judgment calls to a human.
+
+### Every control lands in one of three tiers
+
+| Badge | Tier | Meaning | Reviewer action |
+|-------|------|---------|-----------------|
+| ✓ **auto** (green) | fact | Answered from an **objective cloud fact**. Accepted as-is. | none |
+| **confirm** (amber) | suggested | A tentative answer derived from the **provider's documentation**, with an evidence link. | must confirm or override before submit |
+| **manual** (grey) | manual | **No reliable cloud signal** (org policy / procurement / process). | the human answers; a guidance note says what to confirm |
+
+For the current 23-control questionnaire that's **8 auto · 10 suggested · 5 manual**.
+
+### The 8 auto controls read these cloud facts
+
+Each is a deterministic check against a property of the deployed resource:
+
+| Control | Cloud fact it reads | Example answer |
+|---------|---------------------|----------------|
+| `data_residency` | resource **region** vs *your* approved-regions policy (per cloud) | region `switzerlandnorth` not in approved Azure set → **no (knock-out)** |
+| `safety_filters` | content-safety / responsible-AI policy attached (Azure `raiPolicyName`, Vertex safety) | policy `DefaultV2` attached → **yes** |
+| `access_controls` | `publicNetworkAccess` + `disableLocalAuth` (key vs identity auth) | private + identity-only → **yes**; public + keys → **no** |
+| `encryption_logging` | customer-managed-key encryption + min TLS | CMK + TLS 1.2 → **yes**; TLS only → **partial** |
+| `monitoring` | diagnostic settings / logging sink configured | no sink → **no** |
+| `version_change_process` | version pinning (Azure `versionUpgradeOption`) | `NoAutoUpgrade` (pinned) → **yes**; auto-upgrade → **partial** |
+| `categorization` | model format / modality | foundation, generative → **yes** (+ GenAI profile applies) |
+| `model_card` | exact model name/version/publisher captured at discovery | identity known + provider card linked → **yes** |
+
+### Two-tier trust (why "suggested" still needs a human)
+
+A **region is a fact** — the engine accepts it. A **documentation link is not proof**
+the doc actually covers the claim, so provider-doc controls (provenance, data handling,
+red-team evidence, eval results, bias, GenAI infosec, explainability, IP/licensing,
+SOC 2/ISO, environmental) are pre-filled as **suggested** with the provider's doc
+attached, and the reviewer must tick them off. Submit is blocked until every suggestion
+is confirmed and every manual control is answered.
+
+### "Approved" is *your* policy, not a constant
+
+`data_residency` compares the model's region to an **admin-editable, per-cloud** list
+(Admin → *Data-residency policy*). Azure and GCP use different region names, so they're
+configured in separate buckets. Resolution order: a `DiscoverySource`'s own override
+(`config.approved_regions`) → otherwise the global policy. Edits apply to **new**
+reviews, and the rationale cites *"your approved azure data-residency policy (N
+regions)."*
+
+### Honesty boundary
+
+The engine **only auto-answers objective cloud facts.** Things it deliberately does
+**not** auto-answer, because the cloud API can't know them:
+
+- `vendor_vetted` — whether you have an **active contract / enterprise agreement** with
+  the provider. That's procurement data → **manual**, with a guidance note.
+- `intended_use`, `human_oversight`, `incident_response`, `impact_assessment` — org
+  policy/process → **manual**.
+
+### The flow, end to end
+
+```
+discovery driver → facts{region, content_filter, public_network_access, ...}
+                 │
+open_review ─────┤ autoanswer.collect(facts, vendor, policy, cloud)
+                 │     fact collectors  → answer_source = "auto"       (accepted)
+                 │     doc collectors   → answer_source = "suggested"  (needs confirm)
+                 │     no collector      → manual + guidance note
+                 ▼
+ControlResponse rows pre-filled (answer, source, rationale, evidence_url)
+                 ▼
+reviewer confirms suggestions + answers the manual controls
+                 ▼
+submit → scoring engine → risk score + tier + gates
+```
+
+**Where it lives:** the engine is `backend/app/services/autoanswer.py` (fact + doc
+collectors, `Policy`), policy resolution is `backend/app/services/policy.py`, and it's
+applied in `backend/app/services/review_workflow.py::open_review`. The `facts` dict is
+supplied by the discovery driver — a **stub today**; the real Azure/GCP drivers (M5/M6)
+populate the same shape, so the engine is unchanged when discovery goes live.
 
 ## Stack
 
-FastAPI · SQLAlchemy 2 · Alembic · Postgres 16 · React (M8) · Docker Compose.
+FastAPI · SQLAlchemy 2 · Alembic · Postgres 16 · React + Vite (TS) · Docker Compose.
 Three containers: `api`, `web`, `db`.
 
 ## Quickstart (Docker)
@@ -38,9 +128,12 @@ Three containers: `api`, `web`, `db`.
 ```bash
 cp .env.example .env
 docker compose up --build
-# API + Swagger:  http://localhost:8000/docs
-# Web placeholder: http://localhost:8080
+# Web app:  http://localhost:8080      (Dashboard, New Review, Admin)
+# API docs: http://localhost:8000/docs
 ```
+
+> No Compose plugin? Build/run the three containers directly with `docker build` +
+> `docker run` on a shared `docker network` — the compose file documents the wiring.
 
 ## Quickstart (local backend, no Docker)
 
@@ -48,8 +141,6 @@ docker compose up --build
 cd backend
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-
-# Point at a local Postgres (or sqlite for a quick look):
 export DATABASE_URL="postgresql+psycopg://aigov:changeme-local-only@localhost:5432/aigov"
 alembic upgrade head
 uvicorn app.main:app --reload
@@ -57,7 +148,8 @@ uvicorn app.main:app --reload
 
 ## Auth (dev)
 
-v1 ships a **dev-auth** fallback (OIDC/SSO is M10). Send an `X-Dev-User` header:
+v1 ships a **dev-auth** fallback (OIDC/SSO is M10). Send an `X-Dev-User` header (the SPA
+has a role switcher, top-right):
 
 | User | Roles |
 |------|-------|
@@ -67,22 +159,32 @@ v1 ships a **dev-auth** fallback (OIDC/SSO is M10). Send an `X-Dev-User` header:
 
 `DEV_AUTH_ENABLED=false` disables it (and, until M10, returns 401 — do this in prod).
 
-## Example: run a review end to end
+## Using it
+
+In the browser (http://localhost:8080): **New Review** → pick cloud → vendor → model →
+the workspace opens with controls pre-answered → confirm the amber *suggested* ones and
+answer the grey *manual* ones (score updates live) → **Submit** → switch to
+Approver/Admin → the **approval gate** enforces the tier. **Admin** manages the
+data-residency policy, discovery sources, and framework-version review.
+
+Or drive the API directly:
 
 ```bash
 H='-H X-Dev-User:reviewer@dev.local'
 SID=$(curl -s $H localhost:8000/api/v1/discovery/sources | jq -r '.[]|select(.cloud=="azure").id')
-curl -s $H localhost:8000/api/v1/discovery/sources/$SID/vendors            # -> ["meta","mistral","openai"]
 curl -s $H localhost:8000/api/v1/discovery/sources/$SID/vendors/openai/models
-# POST /api/v1/reviews {source_id, vendor, resource_id, model_version} -> opens a review
-# PATCH each control with an answer, POST /submit -> score, POST /decision -> gate
+# POST /api/v1/reviews {source_id, vendor, resource_id, model_version}  -> opens a pre-filled review
+# GET  /api/v1/reviews/{id}/controls                                    -> see answer_source per control
+# PATCH .../controls/{cid} {answer}  (confirm suggestions / answer manual)
+# POST .../submit  -> score   ·   POST .../decision -> approval gate
+# admin: GET/PUT /api/v1/policy   ·   GET /api/v1/framework, POST /api/v1/framework/reviewed
 ```
 
 ## Tests
 
 ```bash
 cd backend && . .venv/bin/activate
-pytest -q          # pure scoring unit tests + full API integration flow
+pytest -q     # pure scoring units, auto-answer engine, per-cloud policy, framework, full API flow
 ```
 
 ## Layout
@@ -90,26 +192,43 @@ pytest -q          # pure scoring unit tests + full API integration flow
 ```
 backend/
   app/
-    api/v1/        routers: meta, discovery, models, reviews, approvals, audit
+    api/v1/        routers: meta, discovery, models, reviews, approvals, audit, policy, framework
     auth/          dev-auth + role hierarchy (OIDC in M10)
-    discovery/     driver interface + TTL cache + stub (Azure/GCP in M5/M6)
+    discovery/     driver interface + TTL cache + stub (real Azure/GCP in M5/M6)
+    services/
+      autoanswer.py    fact + doc collectors, Policy  ← the auto-answer engine
+      policy.py        per-cloud residency policy: get / update / resolve
+      scoring.py       pure NIST scoring (weights, gates, tiers)
+      review_workflow.py  open (auto-fills controls) / answer / submit / score
+      approvals.py     tier-gated decisions + admin override
+      questionnaire.py / audit.py / models.py
+    nist.py        NIST AI RMF category statements (control notation)
     models/        SQLAlchemy entities + enums
-    schemas/       pydantic request/response models
-    services/      scoring (pure), questionnaire, review_workflow, approvals, audit
-    data/          questionnaire_v1.yaml (23 NIST controls)
-  alembic/         migrations (baseline + audit append-only trigger)
+    data/          questionnaire_v1.yaml  ← single source of truth for the 23 controls
+  alembic/         migrations (baseline + audit trigger + auto-answer/policy/framework cols)
   tests/
-frontend/          web placeholder (React SPA in M8)
+frontend/          React/Vite SPA: Dashboard, New Review, Review workspace, Admin
 docker-compose.yml
 ```
 
 ## Security posture
 
-Read-only, least-privilege cloud access (keyless in prod); no secrets in the image
-or git; immutable, hash-chained audit; decisions bound to a frozen score + frozen
-questionnaire snapshot; non-root containers; pinned dependencies.
+Read-only, least-privilege cloud access (keyless in prod); no secrets in the image or
+git; immutable, hash-chained audit; decisions bound to a frozen score + frozen
+questionnaire snapshot; the engine only auto-accepts objective cloud facts (never
+procurement/contract status); non-root containers; pinned dependencies.
+
+## Keeping the questionnaire current
+
+`backend/app/data/questionnaire_v1.yaml` is the single source of truth for the controls
+and the NIST framework version. The **Admin → Governance framework** card shows the
+version the questions implement (NIST AI 100-1 + 600-1), the control count, and a
+**last-reviewed / next-due** record with an **overdue** flag — mark it reviewed when you
+confirm the questions still match the current NIST release.
 
 ## Roadmap
 
-M5 Azure discovery · M6 GCP discovery · M7 (n/a — pull-based) · M8 React SPA ·
-M9 approval UI + audit viewer · M10 OIDC auth · M11 hardening + prod IaC.
+**Done:** core (M0–M4) · auto-answer engine · per-cloud policy + admin dashboard ·
+framework tracking · React SPA (M8).
+**Next:** M5 real Azure discovery · M6 GCP discovery · M9 audit-log viewer · M10 OIDC
+auth · M11 hardening + prod IaC.
