@@ -89,6 +89,19 @@ export interface FrameworkStatus {
   next_review_due: string | null;
   overdue: boolean;
   notes: string | null;
+  update_available: boolean;
+  latest_known_version: string;
+}
+
+export interface UpdateCheck {
+  implemented_version: string;
+  latest_known_version: string;
+  latest_published: string;
+  latest_label: string;
+  latest_url: string;
+  latest_notes: string;
+  up_to_date: boolean;
+  checked_at: string;
 }
 
 export interface DiscoveredModel {

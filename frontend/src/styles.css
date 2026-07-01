@@ -139,4 +139,11 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .chip { display: inline-flex; align-items: center; gap: 0.35rem; background: var(--panel2); border: 1px solid var(--border); border-radius: 999px; padding: 0.2rem 0.3rem 0.2rem 0.7rem; font-size: 0.82rem; }
 .chip-x { background: none; border: none; color: var(--muted); padding: 0 0.2rem; font-size: 1rem; line-height: 1; }
 .chip-x:hover { color: var(--t4); }
+
+.legend { margin: 0.4rem 0 1rem; font-size: 0.85rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.8rem; }
+.legend summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.legend p { margin: 0.5rem 0; }
+.legend-row { display: flex; gap: 0.6rem; align-items: baseline; margin: 0.45rem 0; }
+.legend-row .badge, .legend-row .tier { flex-shrink: 0; }
+.badge[title], .tier[title] { cursor: help; }
 .spacer-v { height: 0.6rem; }

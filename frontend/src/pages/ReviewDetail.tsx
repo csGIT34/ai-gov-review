@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError, Control, Decision, Me, ReviewDetail as RD, RiskScore, api } from "../api";
-import { SourceBadge, TierBadge, Weight, computePreview, fmtDate, prettyState } from "../ui";
+import {
+  BadgeLegend,
+  ScoreLegend,
+  SourceBadge,
+  TIER_INFO,
+  TierBadge,
+  Weight,
+  computePreview,
+  fmtDate,
+  gaiTitle,
+  prettyState,
+} from "../ui";
 
 const FN_ORDER = ["GOVERN", "MAP", "MEASURE", "MANAGE"];
 const ANSWERS = ["yes", "partial", "no", "unknown"];
@@ -133,6 +144,7 @@ export default function ReviewDetail() {
 
       <div className="grid">
         <div>
+          <BadgeLegend />
           {grouped.map(({ fn, items }) => (
             <div key={fn}>
               <h3>{fn}</h3>
@@ -143,12 +155,14 @@ export default function ReviewDetail() {
                     NIST AI RMF · {c.nist_control || c.control_id}
                   </div>
                   <div className="meta">
-                    <span className="badge">{c.control_id}</span>
+                    <span className="badge" title={c.nist_control || "NIST AI RMF control"}>{c.control_id}</span>
                     <Weight w={c.weight} />
-                    {c.is_ko && <span className="badge ko">KNOCK-OUT</span>}
+                    {c.is_ko && (
+                      <span className="badge ko" title="Knock-out control: a No/Unknown answer forces Tier 4 (blocked), regardless of score.">KNOCK-OUT</span>
+                    )}
                     <SourceBadge source={c.answer_source} />
                     {c.gai_categories.map((g) => (
-                      <span key={g} className="badge" style={{ fontSize: "0.66rem" }}>{g}</span>
+                      <span key={g} className="badge" style={{ fontSize: "0.66rem" }} title={gaiTitle(g)}>{g}</span>
                     ))}
                   </div>
                   <div className="answers">
@@ -207,9 +221,11 @@ export default function ReviewDetail() {
               <>
                 <div className="muted">Risk score</div>
                 <div className="big-score">{score.overall_score}</div>
+                <div className="muted" style={{ fontSize: "0.72rem" }}>0–100 · higher = more unaddressed risk</div>
                 <div style={{ margin: "0.5rem 0" }}>
                   <TierBadge tier={score.tier} label={score.tier_label} />
                 </div>
+                <div className="muted" style={{ fontSize: "0.82rem" }}>{TIER_INFO[score.tier]?.meaning}</div>
                 {score.triggered_gates.map((g, i) => (
                   <div className="gate" key={i}>{g.reason}</div>
                 ))}
@@ -225,7 +241,9 @@ export default function ReviewDetail() {
               <>
                 <div className="muted">Preview score <span style={{ fontSize: "0.7rem" }}>(updates as you answer)</span></div>
                 <div className="big-score">{preview.score}</div>
+                <div className="muted" style={{ fontSize: "0.72rem" }}>0–100 · higher = more unaddressed risk</div>
                 <div style={{ margin: "0.5rem 0" }}><TierBadge tier={preview.tier} /></div>
+                <div className="muted" style={{ fontSize: "0.82rem" }}>{TIER_INFO[preview.tier]?.meaning}</div>
                 {preview.koFails.length > 0 && <div className="gate">Knock-out failures: {preview.koFails.join(", ")}</div>}
                 {preview.highFails.length > 0 && <div className="gate">High-weight failures: {preview.highFails.join(", ")}</div>}
                 <div className="muted" style={{ marginTop: "0.5rem" }}>
@@ -235,6 +253,7 @@ export default function ReviewDetail() {
                 </div>
               </>
             )}
+            <ScoreLegend />
           </div>
 
           {editable && (

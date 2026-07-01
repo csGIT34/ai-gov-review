@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ApiError, FrameworkStatus, Policy, Source, api } from "../api";
+import { ApiError, FrameworkStatus, Policy, UpdateCheck, api } from "../api";
 
 const CLOUDS = ["azure", "gcp"] as const;
 
@@ -10,9 +10,8 @@ function fmt(d: string | null): string {
 export default function Admin({ isAdmin }: { isAdmin: boolean }) {
   const [regions, setRegions] = useState<Record<string, string[]>>({ azure: [], gcp: [] });
   const [draft, setDraft] = useState<Record<string, string>>({ azure: "", gcp: "" });
-  const [sources, setSources] = useState<Source[]>([]);
-  const [src, setSrc] = useState({ cloud: "azure", display_name: "", scope: "" });
   const [fw, setFw] = useState<FrameworkStatus | null>(null);
+  const [check, setCheck] = useState<UpdateCheck | null>(null);
   const [reviewNotes, setReviewNotes] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,11 +20,14 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
     api.get<FrameworkStatus>("/framework").then(setFw).catch(() => {});
   }
 
+  function checkForUpdates() {
+    api.get<UpdateCheck>("/framework/check-updates").then(setCheck).catch((e) => setError(e.message));
+  }
+
   useEffect(() => {
     api.get<Policy>("/policy")
       .then((p) => setRegions({ azure: p.approved_regions.azure || [], gcp: p.approved_regions.gcp || [] }))
       .catch((e) => setError(e.message));
-    api.get<Source[]>("/discovery/sources").then(setSources).catch(() => {});
     loadFramework();
   }, []);
 
@@ -64,18 +66,6 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
-  async function addSource() {
-    setError(null); setMsg(null);
-    try {
-      await api.post<Source>("/discovery/sources", src);
-      setSrc({ cloud: "azure", display_name: "", scope: "" });
-      setSources(await api.get<Source[]>("/discovery/sources"));
-      setMsg("Discovery source added.");
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
-    }
-  }
-
   if (!isAdmin) {
     return <div className="err">Admin role required. Switch to Admin (top-right).</div>;
   }
@@ -90,7 +80,14 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
         <div className="card">
           <div className="row" style={{ justifyContent: "space-between" }}>
             <h2 style={{ margin: 0 }}>Governance framework</h2>
-            {fw.overdue && <span className="badge ko">REVIEW OVERDUE</span>}
+            <div className="row">
+              {fw.update_available ? (
+                <span className="badge src-suggested" title={`A newer NIST release (${fw.latest_known_version}) is known than the version the questionnaire implements.`}>UPDATE AVAILABLE</span>
+              ) : (
+                <span className="badge src-auto" title="The questionnaire implements the latest known NIST release.">up to date</span>
+              )}
+              {fw.overdue && <span className="badge ko">REVIEW OVERDUE</span>}
+            </div>
           </div>
           <p style={{ marginBottom: "0.4rem" }}>
             <strong>{fw.name}</strong>
@@ -107,6 +104,17 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
                 {r.doc} · {r.label} ↗
               </a>
             ))}
+          </div>
+          <div className="row" style={{ marginTop: "0.6rem" }}>
+            <button className="secondary" onClick={checkForUpdates}>Check for updates</button>
+            {check && (
+              <span className="muted" style={{ fontSize: "0.82rem" }}>
+                {check.up_to_date
+                  ? `Up to date — implementing ${check.implemented_version}, latest known ${check.latest_known_version}.`
+                  : `Update available — NIST ${check.latest_label} (${check.latest_published}), you implement ${check.implemented_version}.`}{" "}
+                <a href={check.latest_url} target="_blank" rel="noreferrer">NIST ↗</a>
+              </span>
+            )}
           </div>
           <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "0.9rem 0" }} />
           <div className="row" style={{ gap: "1.5rem", fontSize: "0.85rem" }}>
@@ -161,35 +169,6 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
         ))}
         <div className="row" style={{ marginTop: "1rem" }}>
           <button onClick={savePolicy}>Save policy</button>
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Discovery sources</h2>
-        <p className="muted">Cloud scopes queried to populate the review dropdowns.</p>
-        <table>
-          <thead>
-            <tr><th>Cloud</th><th>Name</th><th>Scope</th><th>Enabled</th></tr>
-          </thead>
-          <tbody>
-            {sources.map((s) => (
-              <tr key={s.id}>
-                <td>{s.cloud}</td>
-                <td>{s.display_name}</td>
-                <td className="muted" style={{ fontSize: "0.8rem" }}>{s.scope}</td>
-                <td>{s.enabled ? "yes" : "no"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="row" style={{ marginTop: "0.75rem" }}>
-          <select value={src.cloud} onChange={(e) => setSrc({ ...src, cloud: e.target.value })}>
-            <option value="azure">azure</option>
-            <option value="gcp">gcp</option>
-          </select>
-          <input placeholder="display name" value={src.display_name} onChange={(e) => setSrc({ ...src, display_name: e.target.value })} />
-          <input placeholder="scope (subscription / org id)" value={src.scope} onChange={(e) => setSrc({ ...src, scope: e.target.value })} />
-          <button onClick={addSource} disabled={!src.display_name || !src.scope}>Add source</button>
         </div>
       </div>
     </div>
