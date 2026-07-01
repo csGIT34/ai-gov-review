@@ -80,7 +80,8 @@ class Model(UUIDPKMixin, TimestampMixin, Base):
     resource_kind: Mapped[str | None] = mapped_column(String(200), nullable=True)
     subscription_or_project: Mapped[str | None] = mapped_column(String(300), nullable=True)
     resource_group: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    region: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # A model is deployed across many regions (for quota) — its residency footprint.
+    regions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     sku: Mapped[str | None] = mapped_column(String(100), nullable=True)
     endpoint: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     provisioning_state: Mapped[str | None] = mapped_column(String(100), nullable=True)

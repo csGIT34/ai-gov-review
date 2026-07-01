@@ -107,7 +107,7 @@ class DiscoveredModelOut(Schema):
     model_format: str | None = None
     resource_id: str
     resource_kind: str | None = None
-    region: str | None = None
+    regions: list[str] = []
     sku: str | None = None
     endpoint: str | None = None
     provisioning_state: str | None = None
@@ -123,7 +123,7 @@ class ModelOut(ORMModel):
     model_name: str
     model_version: str | None
     resource_id: str
-    region: str | None
+    regions: list[str]
     status: str
     latest_score: float | None
     latest_tier: int | None

@@ -48,12 +48,16 @@ def test_reviewer_cannot_update_policy(client):
 def test_admin_edit_changes_autoanswer(client):
     cur = client.get(f"{API}/policy", headers=ADMIN).json()["approved_regions"]
     upd = client.put(f"{API}/policy", headers=ADMIN, json={
-        "approved_regions": {"azure": cur["azure"] + ["switzerlandnorth"], "gcp": cur["gcp"]}
+        # Approve Mistral's whole footprint.
+        "approved_regions": {
+            "azure": cur["azure"] + ["switzerlandnorth", "francecentral", "uaenorth"],
+            "gcp": cur["gcp"],
+        }
     })
     assert upd.status_code == 200
     assert "switzerlandnorth" in upd.json()["approved_regions"]["azure"]
 
-    # A newly opened Mistral (Azure, switzerlandnorth) review now auto-answers residency "yes".
+    # A newly opened Mistral (Azure) review now auto-answers residency "yes".
     sources = client.get(f"{API}/discovery/sources", headers=REVIEWER).json()
     sid = next(s["id"] for s in sources if s["cloud"] == "azure")
     m = client.get(f"{API}/discovery/sources/{sid}/vendors/mistral/models", headers=REVIEWER).json()[0]
@@ -92,11 +96,11 @@ def test_explicit_empty_clears_a_cloud(client):
 
 
 def test_per_source_override_applies_and_is_cleaned(client):
-    # A source whose own config approves switzerlandnorth for Azure (with sloppy
-    # whitespace) overrides the global policy for models from that source.
+    # A source whose own config approves the Mistral footprint for Azure (with
+    # sloppy whitespace) overrides the global policy for models from that source.
     src = client.post(f"{API}/discovery/sources", headers=ADMIN, json={
         "cloud": "azure", "display_name": "Azure CH", "scope": "SUB-CH",
-        "config": {"approved_regions": [" switzerlandnorth "]},
+        "config": {"approved_regions": [" switzerlandnorth ", "francecentral", "uaenorth"]},
     }).json()
     m = client.get(f"{API}/discovery/sources/{src['id']}/vendors/mistral/models",
                    headers=REVIEWER).json()[0]

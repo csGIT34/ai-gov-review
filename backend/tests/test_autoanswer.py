@@ -69,6 +69,20 @@ def test_partial_access_when_only_one_control_present():
     assert r["access_controls"].answer == "partial"
 
 
+def test_multiregion_residency():
+    from app.services.autoanswer import Policy
+    p = Policy(approved_regions={"azure": frozenset({"eastus", "eastus2", "westus3", "westeurope"})})
+    # A footprint entirely inside the approved set passes.
+    ok = collect({"regions": ["eastus", "westus3", "westeurope"]}, "openai", p, cloud="azure")
+    assert ok["data_residency"].answer == "yes"
+    # A single offending region fails the whole model, and is named.
+    bad = collect({"regions": ["eastus", "eastus2", "brazilsouth"]}, "openai", p, cloud="azure")
+    assert bad["data_residency"].answer == "no"
+    assert "brazilsouth" in bad["data_residency"].rationale
+    # The approved regions are NOT reported as offenders.
+    assert "outside" in bad["data_residency"].rationale
+
+
 # --- API: pre-fill on open, confirm-to-submit ----------------------------------
 
 def _open_gpt4o(client):

@@ -43,7 +43,7 @@ def upsert_model(
     now = utcnow()
     if existing is not None:
         existing.last_seen_at = now
-        existing.region = discovered.region or existing.region
+        existing.regions = discovered.regions or existing.regions
         existing.provisioning_state = discovered.provisioning_state or existing.provisioning_state
         existing.facts = discovered.facts or existing.facts
         existing.status = "active"
@@ -61,7 +61,7 @@ def upsert_model(
         resource_kind=discovered.resource_kind,
         subscription_or_project=discovered.subscription_or_project,
         resource_group=discovered.resource_group,
-        region=discovered.region,
+        regions=discovered.regions,
         sku=discovered.sku,
         endpoint=discovered.endpoint,
         provisioning_state=discovered.provisioning_state,

@@ -135,7 +135,10 @@ export default function ReviewDetail() {
       <div className="card row" style={{ gap: "1.5rem", fontSize: "0.85rem" }}>
         <span><span className="muted">cloud</span> {d.model.cloud}</span>
         <span><span className="muted">vendor</span> {d.model.vendor}</span>
-        <span><span className="muted">region</span> {d.model.region || "—"}</span>
+        <span>
+          <span className="muted">regions ({d.model.regions.length})</span>{" "}
+          {d.model.regions.length ? d.model.regions.join(", ") : "—"}
+        </span>
         <span className="muted" style={{ fontSize: "0.75rem" }}>{d.model.resource_id}</span>
       </div>
 

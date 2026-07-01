@@ -100,13 +100,21 @@ def _suggest(answer: str, rationale: str, url: str | None) -> AutoResult:
 # --- fact collectors (deterministic) ------------------------------------------
 
 def _data_residency(f: dict, vendor: str, docs: dict, policy: Policy, cloud: str | None) -> AutoResult:
-    r = f.get("region")
-    ok = policy.residency_ok(cloud, r)
-    n = policy.region_count(cloud)
+    regions = f.get("regions") or ([f["region"]] if f.get("region") else [])
+    approved = policy.approved_regions.get(cloud, frozenset())
+    if not regions:
+        return _auto("unknown", f"No deployment regions reported for this {cloud} model.")
+    offenders = sorted(r for r in regions if r not in approved)
+    if not offenders:
+        return _auto(
+            "yes",
+            f"All {len(regions)} deployment region(s) are within your approved {cloud} "
+            f"data-residency policy: {', '.join(sorted(regions))}.",
+        )
     return _auto(
-        "yes" if ok else "no",
-        f"Deployment region '{r}' ({cloud}) {'is within' if ok else 'is NOT within'} "
-        f"your approved {cloud} data-residency policy ({n} region{'s' if n != 1 else ''}).",
+        "no",
+        f"Deployed to region(s) outside your approved {cloud} data-residency policy: "
+        f"{', '.join(offenders)} (of {len(regions)} total: {', '.join(sorted(regions))}).",
     )
 
 

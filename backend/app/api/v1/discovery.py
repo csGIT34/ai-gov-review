@@ -105,7 +105,7 @@ def list_models(
                 model_format=d.model_format,
                 resource_id=d.resource_id,
                 resource_kind=d.resource_kind,
-                region=d.region,
+                regions=d.regions,
                 sku=d.sku,
                 endpoint=d.endpoint,
                 provisioning_state=d.provisioning_state,

@@ -24,19 +24,22 @@ class DiscoveredModel:
     resource_kind: str | None = None
     subscription_or_project: str | None = None
     resource_group: str | None = None
-    region: str | None = None
+    # The regions this model is deployed to (its residency footprint) — a model is
+    # typically deployed to many regions for quota.
+    regions: list = field(default_factory=list)
     sku: str | None = None
     endpoint: str | None = None
     provisioning_state: str | None = None
     cloud_created_at: datetime | None = None
     cloud_last_modified_at: datetime | None = None
-    # Cloud resource properties the auto-answer engine reads (region, content
+    # Cloud resource properties the auto-answer engine reads (regions, content
     # filter, network exposure, encryption, versioning, etc.).
     facts: dict = field(default_factory=dict)
 
     def label(self) -> str:
         v = f":{self.model_version}" if self.model_version else ""
-        loc = f" ({self.region})" if self.region else ""
+        n = len(self.regions)
+        loc = f" ({n} region{'s' if n != 1 else ''})" if n else ""
         return f"{self.model_name}{v}{loc}"
 
     def as_dict(self) -> dict:

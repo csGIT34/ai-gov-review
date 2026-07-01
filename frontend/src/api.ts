@@ -109,7 +109,7 @@ export interface DiscoveredModel {
   model_name: string;
   model_version: string | null;
   resource_id: string;
-  region: string | null;
+  regions: string[];
   label: string;
 }
 
@@ -120,7 +120,7 @@ export interface ModelOut {
   model_name: string;
   model_version: string | null;
   resource_id: string;
-  region: string | null;
+  regions: string[];
   status: string;
   latest_score: number | null;
   latest_tier: number | null;
