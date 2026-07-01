@@ -4,29 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI Governance Review</title>
-    <style>
-      body { font-family: system-ui, sans-serif; max-width: 720px; margin: 4rem auto; padding: 0 1rem; color: #1a1a2e; }
-      code { background: #f0f0f5; padding: 0.1rem 0.35rem; border-radius: 4px; }
-      .tag { display: inline-block; background: #2d6cdf; color: #fff; font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px; }
-      a { color: #2d6cdf; }
-    </style>
   </head>
   <body>
-    <p><span class="tag">v0.1 · backend M0–M4</span></p>
-    <h1>AI Governance Review</h1>
-    <p>
-      Discover cloud-hosted AI models (Azure / GCP), run a NIST AI RMF (+ GenAI
-      Profile) review, score risk, and gate approval with an immutable audit trail.
-    </p>
-    <p>The React SPA lands in M8. For now, drive the API directly:</p>
-    <ul>
-      <li><a href="/docs">/docs</a> — interactive Swagger UI</li>
-      <li><code>GET /api/v1/discovery/sources</code> — pick a cloud</li>
-      <li><code>GET /api/v1/questionnaire</code> — the 23 NIST controls</li>
-    </ul>
-    <p>
-      Dev auth: send <code>X-Dev-User: admin@dev.local</code> (or
-      <code>approver@dev.local</code> / <code>reviewer@dev.local</code>).
-    </p>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
