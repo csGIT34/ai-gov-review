@@ -1,0 +1,28 @@
+# Pinned to resolved versions for reproducibility (governance tool: deterministic
+# builds + clean dependency scanning). Regenerate after bumps with `pip freeze`.
+
+# Core API
+fastapi==0.138.2
+uvicorn[standard]==0.49.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+
+# Persistence
+SQLAlchemy==2.0.51
+alembic==1.18.5
+psycopg[binary]==3.3.4
+
+# Config / data
+PyYAML==6.0.3
+
+# Auth (dev fallback now; OIDC in M10)
+PyJWT==2.13.0
+argon2-cffi==25.1.0
+
+# Testing
+pytest==9.1.1
+httpx==0.28.1
+
+# Cloud discovery SDKs are added in M5/M6 (kept out of the core image for now):
+#   azure-identity, azure-mgmt-cognitiveservices, azure-mgmt-resourcegraph
+#   google-cloud-asset, google-cloud-aiplatform, google-auth

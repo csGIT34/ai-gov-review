@@ -1,0 +1,50 @@
+"""Model package — re-exports Base, entities, and enums."""
+from app.models.base import GUID, Base, TimestampMixin, UUIDPKMixin, utcnow
+from app.models.entities import (
+    ApprovalDecision,
+    AuditLog,
+    ControlResponse,
+    DiscoverySource,
+    Model,
+    Review,
+    RiskScore,
+    User,
+)
+from app.models.enums import (
+    DECISION_STATES,
+    Answer,
+    Cloud,
+    Decision,
+    ModelStatus,
+    NistFunction,
+    ReviewState,
+    ReviewTrigger,
+    Role,
+    Weight,
+)
+
+__all__ = [
+    "Base",
+    "GUID",
+    "TimestampMixin",
+    "UUIDPKMixin",
+    "utcnow",
+    "User",
+    "DiscoverySource",
+    "Model",
+    "Review",
+    "ControlResponse",
+    "RiskScore",
+    "ApprovalDecision",
+    "AuditLog",
+    "Cloud",
+    "ReviewState",
+    "ReviewTrigger",
+    "Answer",
+    "Weight",
+    "NistFunction",
+    "Decision",
+    "Role",
+    "ModelStatus",
+    "DECISION_STATES",
+]
