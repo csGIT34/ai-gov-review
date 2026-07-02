@@ -72,10 +72,14 @@ def _ensure_live_source(
         if src.display_name in (demo_name, live_name):
             src.scope = scope
             src.display_name = live_name
+            src.config = {**(src.config or {}), "driver": "live"}
             converted = True
     if not converted and not any(src.scope == scope for src in rows):
         db.add(
-            DiscoverySource(cloud=cloud, display_name=live_name, scope=scope, enabled=True)
+            DiscoverySource(
+                cloud=cloud, display_name=live_name, scope=scope,
+                config={"driver": "live"}, enabled=True,
+            )
         )
     db.commit()
     return True

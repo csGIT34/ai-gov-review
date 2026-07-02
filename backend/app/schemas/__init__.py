@@ -38,6 +38,9 @@ class SourceOut(ORMModel):
     display_name: str
     scope: str
     enabled: bool
+    # Per-source settings: driver ("stub"|"live"), include_catalog,
+    # approved_regions override. NEVER credentials — auth is ambient/keyless.
+    config: dict | None = None
 
 
 class SourceCreate(Schema):
@@ -46,6 +49,15 @@ class SourceCreate(Schema):
     scope: str
     credential_ref: str | None = None
     config: dict | None = None
+
+
+class SourceUpdate(Schema):
+    """Admin PATCH for a discovery source. Only provided fields change."""
+
+    display_name: str | None = None
+    scope: str | None = None
+    enabled: bool | None = None
+    config: dict | None = None  # merged onto the existing config
 
 
 class PolicyOut(ORMModel):

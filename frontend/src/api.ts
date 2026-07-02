@@ -63,6 +63,7 @@ export interface Source {
   display_name: string;
   scope: string;
   enabled: boolean;
+  config: { driver?: string; include_catalog?: boolean } | null;
 }
 
 export interface Policy {
@@ -216,6 +217,12 @@ export interface AdoptResult {
   precedent_id: string;
   carried_keys: string[];
   carried_count: number;
+}
+
+export interface SourceConfig {
+  driver?: "stub" | "live";
+  include_catalog?: boolean;
+  approved_regions?: string[] | Record<string, string[]>;
 }
 
 export interface PrecedentRow {

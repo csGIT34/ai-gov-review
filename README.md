@@ -248,10 +248,46 @@ docker compose up --build
 > No Compose plugin? Build/run the three containers directly with `docker build` +
 > `docker run` on a shared `docker network` — the compose file documents the wiring.
 
+## Configuring discovery (Admin page)
+
+Discovery sources are managed on the **Admin page** — per source you set the
+display name, the **scope** (Azure subscription id / GCP project id), whether
+it's enabled, and the **driver**: `stub` (demo data) or `live` (real cloud,
+read-only). Flipping a source between stub and live takes effect
+**immediately, no restart** — both drivers are always registered and the
+choice is resolved per request (`PATCH /api/v1/discovery/sources/{id}`,
+admin-only, audited).
+
+**Credentials are never stored in the app.** The sources table holds no
+secrets, and the API actively rejects config keys that look like credentials
+(`*secret*`, `*key*`, `*token*`, …). Live drivers authenticate **ambiently and
+keyless** (see below). The `AZURE_DISCOVERY` / `GCP_DISCOVERY` env vars remain
+as the *default* driver mode for sources that don't set their own.
+
+## Keyless auth / Workload Identity Federation
+
+Both live drivers are WIF-ready and refuse secret-based auth outright:
+
+- **Azure** — `DefaultAzureCredential` with the client-secret path
+  (`EnvironmentCredential`) **excluded**: the chain is **workload identity
+  federation** (`AZURE_FEDERATED_TOKEN_FILE` — AKS workload identity, GitHub
+  Actions OIDC), **managed identity**, then the az CLI for local dev.
+  `AZURE_CLIENT_SECRET` is deliberately never read. RBAC: **Reader**.
+- **GCP** — Application Default Credentials, with service-account **key files
+  actively rejected** (clear error telling you to use WIF instead). Accepted:
+  **workload identity federation** (an `external_account` credential
+  *configuration* — token-exchange wiring, not a secret), GKE/GCE **attached
+  service accounts** (metadata server), and gcloud user credentials for local
+  dev. IAM: **roles/aiplatform.viewer**. User-credential calls automatically
+  carry the `x-goog-user-project` quota header.
+- Dev shortcut on both clouds: a short-lived bearer via env
+  (`AZURE_ACCESS_TOKEN` / `GCP_ACCESS_TOKEN`, ~1h) — never persisted, never
+  baked into images.
+
 ## Live Azure discovery (M5)
 
-Set two env vars on the API and the Azure dropdowns read your real subscription
-instead of the stub:
+Point an Azure source's scope at your subscription and set its driver to
+`live` on the Admin page (or set env defaults):
 
 ```bash
 AZURE_DISCOVERY=live

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ApiError, FrameworkStatus, Policy, PrecedentRow, UpdateCheck, api } from "../api";
+import { ApiError, FrameworkStatus, Policy, PrecedentRow, Source, UpdateCheck, api } from "../api";
 import { TierBadge } from "../ui";
 
 const CLOUDS = ["azure", "gcp"] as const;
@@ -19,6 +19,8 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [precedents, setPrecedents] = useState<PrecedentRow[]>([]);
   const [precDel, setPrecDel] = useState<string | null>(null); // armed for delete
+  const [sources, setSources] = useState<Source[]>([]);
+  const [srcDraft, setSrcDraft] = useState<Record<string, { scope: string; driver: string }>>({});
 
   function loadFramework() {
     api.get<FrameworkStatus>("/framework").then(setFw).catch(() => {});
@@ -34,7 +36,28 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
       .catch((e) => setError(e.message));
     loadFramework();
     api.get<PrecedentRow[]>("/precedents").then(setPrecedents).catch(() => {});
+    loadSources();
   }, []);
+
+  function loadSources() {
+    api.get<Source[]>("/discovery/sources?include_disabled=true").then((ss) => {
+      setSources(ss);
+      setSrcDraft(Object.fromEntries(ss.map((s) => [
+        s.id, { scope: s.scope, driver: s.config?.driver || "stub" },
+      ])));
+    }).catch(() => {});
+  }
+
+  async function saveSource(s: Source, patch: { scope?: string; enabled?: boolean; config?: object }) {
+    setError(null); setMsg(null);
+    try {
+      await api.patch<Source>(`/discovery/sources/${s.id}`, patch);
+      loadSources();
+      setMsg(`Source "${s.display_name}" updated. Dropdowns refresh immediately — no restart.`);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    }
+  }
 
   async function togglePrecedent(p: PrecedentRow) {
     setError(null);
@@ -199,6 +222,69 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
         <div className="row" style={{ marginTop: "1rem" }}>
           <button onClick={savePolicy}>Save policy</button>
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Cloud discovery sources</h2>
+        <p className="muted">
+          Where the review dropdowns read models from. <strong>stub</strong> serves demo data;{" "}
+          <strong>live</strong> reads the real cloud (read-only) using the scope below — an Azure{" "}
+          <em>subscription id</em> or a GCP <em>project id</em>. Switching takes effect
+          immediately, no restart. <strong>Credentials are never stored here:</strong> live drivers
+          authenticate ambiently and keyless — workload identity federation / managed identity in
+          production, your CLI login in dev. Client secrets and exported keys are refused by design.
+        </p>
+        <table>
+          <thead>
+            <tr><th>Source</th><th>Cloud</th><th>Scope (subscription / project)</th><th>Driver</th><th>Enabled</th><th></th></tr>
+          </thead>
+          <tbody>
+            {sources.map((s) => {
+              const draft = srcDraft[s.id] || { scope: s.scope, driver: s.config?.driver || "stub" };
+              const dirty = draft.scope !== s.scope || draft.driver !== (s.config?.driver || "stub");
+              return (
+                <tr key={s.id} style={s.enabled ? undefined : { opacity: 0.55 }}>
+                  <td>{s.display_name}</td>
+                  <td className="muted">{s.cloud}</td>
+                  <td>
+                    <input
+                      style={{ width: "100%", minWidth: "16rem" }}
+                      value={draft.scope}
+                      placeholder={s.cloud === "azure" ? "subscription guid" : "project id"}
+                      onChange={(e) => setSrcDraft({ ...srcDraft, [s.id]: { ...draft, scope: e.target.value } })}
+                    />
+                  </td>
+                  <td>
+                    <select
+                      value={draft.driver}
+                      onChange={(e) => setSrcDraft({ ...srcDraft, [s.id]: { ...draft, driver: e.target.value } })}
+                    >
+                      <option value="stub">stub (demo)</option>
+                      <option value="live">live (read-only)</option>
+                    </select>
+                  </td>
+                  <td>
+                    <button
+                      className="secondary row-del"
+                      title={s.enabled ? "Disable — hide this source from the New Review dropdown" : "Enable this source"}
+                      onClick={() => saveSource(s, { enabled: !s.enabled })}
+                    >
+                      {s.enabled ? "enabled ✓" : "disabled"}
+                    </button>
+                  </td>
+                  <td>
+                    <button
+                      disabled={!dirty}
+                      onClick={() => saveSource(s, { scope: draft.scope, config: { driver: draft.driver } })}
+                    >
+                      Save
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       <div className="card">

@@ -19,8 +19,11 @@ Auth (keyless / least-privilege, tried in order):
   1. GCP_ACCESS_TOKEN env — a short-lived bearer from
      `gcloud auth print-access-token` for containerized dev; expires in ~1h
      and is never persisted.
-  2. google.auth.default() — Application Default Credentials: gcloud locally,
-     attached service account / workload identity in production.
+  2. google.auth.default() — Application Default Credentials, with
+     service-account KEY FILES actively REJECTED. Accepted: workload identity
+     federation (external_account credential *configuration* — it holds no
+     secret, just token-exchange wiring), GKE/GCE attached service accounts
+     (metadata server), and gcloud user credentials for local dev.
 """
 from __future__ import annotations
 
@@ -110,9 +113,22 @@ class _TokenSource:
         import google.auth.transport.requests
 
         if self._credentials is None:
-            self._credentials, _ = google.auth.default(
+            creds, _ = google.auth.default(
                 scopes=["https://www.googleapis.com/auth/cloud-platform.read-only"]
             )
+            # KEYLESS ONLY: refuse long-lived service-account private keys.
+            # Workload identity federation (external_account) passes this check
+            # — its credential file is exchange configuration, not a secret.
+            from google.oauth2 import service_account
+
+            if isinstance(creds, service_account.Credentials):
+                raise ValidationError(
+                    "A service-account key file was detected in the credential "
+                    "chain. This app is keyless by design — use workload "
+                    "identity federation, an attached service account, or "
+                    "gcloud user credentials instead of exported keys."
+                )
+            self._credentials = creds
         self._credentials.refresh(google.auth.transport.requests.Request())
         self._token = self._credentials.token
         expiry = getattr(self._credentials, "expiry", None)

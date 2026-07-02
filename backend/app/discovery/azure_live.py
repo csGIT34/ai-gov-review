@@ -24,8 +24,10 @@ Auth (keyless / least-privilege, tried in order):
   1. AZURE_ACCESS_TOKEN env — a short-lived bearer from
      `az account get-access-token` for containerized dev; expires in ~1h and
      is never persisted.
-  2. azure.identity.DefaultAzureCredential — az CLI locally, managed identity
-     or workload identity in production.
+  2. azure.identity.DefaultAzureCredential with the client-secret path
+     EXCLUDED — the chain is workload identity federation (AKS / GitHub OIDC
+     via AZURE_FEDERATED_TOKEN_FILE), managed identity, then az CLI. Client
+     secrets and certificates in env vars are deliberately never read.
 """
 from __future__ import annotations
 
@@ -127,7 +129,15 @@ class _TokenSource:
             # Imported lazily so stub-mode deployments don't need azure-identity.
             from azure.identity import DefaultAzureCredential
 
-            self._credential = DefaultAzureCredential()
+            # KEYLESS ONLY: EnvironmentCredential is excluded because it is the
+            # path that reads AZURE_CLIENT_SECRET / certificate env vars. What
+            # remains is workload identity federation (AZURE_FEDERATED_TOKEN_FILE
+            # — AKS workload identity, GitHub Actions OIDC), managed identity,
+            # and the az CLI for local dev. No secrets, ever.
+            self._credential = DefaultAzureCredential(
+                exclude_environment_credential=True,
+                exclude_interactive_browser_credential=True,
+            )
         t = self._credential.get_token(f"{ARM}/.default")
         self._token, self._expires_on = t.token, float(t.expires_on)
         return self._token

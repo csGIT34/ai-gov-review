@@ -64,23 +64,47 @@ class DiscoveryDriver(ABC):
 
 
 # --- registry ------------------------------------------------------------------
+# Both a "stub" and a "live" driver are registered per cloud; WHICH one a
+# discovery source uses is admin-configurable per source
+# (source.config["driver"]), with the AZURE_DISCOVERY / GCP_DISCOVERY env vars
+# as the default. No restart needed to flip a source between stub and live.
 
-_REGISTRY: dict[str, DiscoveryDriver] = {}
+VALID_MODES = ("stub", "live")
+
+_REGISTRY: dict[tuple[str, str], DiscoveryDriver] = {}
 
 
-def register_driver(driver: DiscoveryDriver) -> None:
-    _REGISTRY[driver.cloud] = driver
+def register_driver(driver: DiscoveryDriver, mode: str = "stub") -> None:
+    _REGISTRY[(driver.cloud, mode)] = driver
 
 
-def get_driver(cloud: str) -> DiscoveryDriver:
-    driver = _REGISTRY.get(cloud)
+def get_driver(cloud: str, mode: str = "stub") -> DiscoveryDriver:
+    driver = _REGISTRY.get((cloud, mode))
     if driver is None:
-        raise KeyError(f"No discovery driver registered for cloud '{cloud}'")
+        raise KeyError(f"No '{mode}' discovery driver registered for cloud '{cloud}'")
     return driver
 
 
+def resolve_mode(cloud: str, config: dict | None) -> str:
+    """Driver mode for a source: its own config wins, else the env default."""
+    from app.config import get_settings
+
+    cfg_mode = ((config or {}).get("driver") or "").lower()
+    if cfg_mode in VALID_MODES:
+        return cfg_mode
+    env_default = {
+        "azure": get_settings().azure_discovery,
+        "gcp": get_settings().gcp_discovery,
+    }.get(cloud, "stub").lower()
+    return env_default if env_default in VALID_MODES else "stub"
+
+
+def driver_for(cloud: str, config: dict | None) -> DiscoveryDriver:
+    return get_driver(cloud, resolve_mode(cloud, config))
+
+
 def list_supported_clouds() -> list[str]:
-    return sorted(_REGISTRY.keys())
+    return sorted({cloud for cloud, _ in _REGISTRY})
 
 
 # --- tiny TTL cache ------------------------------------------------------------
@@ -118,20 +142,14 @@ class TTLCache:
 discovery_cache = TTLCache(ttl_seconds=120.0)
 
 
-# Register drivers. Stubs are the default; AZURE_DISCOVERY=live / GCP_DISCOVERY=live
-# swap in the real (read-only) drivers per cloud.
-from app.config import get_settings  # noqa: E402
+# Register drivers: stub AND live for each cloud, always. Which one a source
+# uses is decided per request via resolve_mode() — admin-editable, no restart.
+# Live drivers are cheap to construct; credentials resolve lazily on first use.
+from app.discovery.azure_live import AzureLiveDriver  # noqa: E402
+from app.discovery.gcp_live import GcpLiveDriver  # noqa: E402
 from app.discovery.stub import StubAzureDriver, StubGcpDriver  # noqa: E402
 
-register_driver(StubAzureDriver())
-register_driver(StubGcpDriver())
-
-if get_settings().azure_discovery.lower() == "live":
-    from app.discovery.azure_live import AzureLiveDriver  # noqa: E402
-
-    register_driver(AzureLiveDriver())  # replaces the azure stub
-
-if get_settings().gcp_discovery.lower() == "live":
-    from app.discovery.gcp_live import GcpLiveDriver  # noqa: E402
-
-    register_driver(GcpLiveDriver())  # replaces the gcp stub
+register_driver(StubAzureDriver(), "stub")
+register_driver(StubGcpDriver(), "stub")
+register_driver(AzureLiveDriver(), "live")
+register_driver(GcpLiveDriver(), "live")
