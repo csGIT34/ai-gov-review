@@ -87,20 +87,19 @@ override re-owns the answer as `human`.
 ### Two answering teams
 
 Every control also declares **who answers it** (`owner` in the questionnaire),
-and the review page splits into two labeled sections with per-section progress
-chips:
+and the review page splits into two collapsible sections — named by the
+responsible team, with per-section progress chips:
 
-- **Model & platform** (14 controls) — inherent to the model and the cloud
-  platform hosting it: residency, network/auth, encryption, filters,
-  monitoring, version pinning, data handling, licensing, certifications,
-  provenance, model card. Answerable by the **infra / governance team** — and
-  since every auto + attested answer lands here, this half largely settles
-  itself.
-- **Your use case** (9 controls) — depends on how *this* deployment will be
-  used: intended use, evaluation for the task, bias for affected groups,
-  prompt-injection surface, explainability adequacy, human oversight, incident
-  runbook, impact assessment, environmental. Answered by the **team consuming
-  the model**.
+- **Infrastructure team** (14 model & platform controls) — facts about the
+  model itself and the cloud platform hosting it: residency, network/auth,
+  encryption, filters, monitoring, version pinning, data handling, licensing,
+  certifications, provenance, model card. Every auto + attested answer lands
+  here, so this half largely settles itself.
+- **Developer team** (9 use-case controls) — judgments about how *this*
+  deployment will be used, owned by the team building on the model: intended
+  use, evaluation for the task, bias for affected groups, prompt-injection
+  surface, explainability adequacy, human oversight, incident runbook, impact
+  assessment, environmental.
 
 ### The 8 auto controls read these cloud facts
 

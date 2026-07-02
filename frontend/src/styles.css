@@ -161,8 +161,12 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .owner-section { border-left: 3px solid var(--border); padding-left: 1rem; margin: 1.25rem 0 1.75rem; }
 .owner-section.platform { border-left-color: var(--accent); }
 .owner-section.use_case { border-left-color: var(--t2); }
-.owner-head { display: flex; align-items: center; gap: 0.75rem; }
+.owner-head { display: flex; align-items: center; gap: 0.75rem; cursor: pointer; list-style: none; }
+.owner-head::-webkit-details-marker { display: none; }
+.owner-head::before { content: "▸"; color: var(--muted); font-size: 0.9rem; transition: transform 0.15s; }
+.owner-section[open] > .owner-head::before { transform: rotate(90deg); }
 .owner-head h2 { margin: 0; }
+.owner-subtitle { font-size: 0.8rem; }
 .owner-blurb { font-size: 0.85rem; margin: 0.25rem 0 0.5rem; }
 
 .snapshot { font-size: 0.7rem; max-height: 320px; overflow: auto; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; white-space: pre-wrap; word-break: break-word; }

@@ -193,27 +193,29 @@ export default function ReviewDetail() {
     }
   }
 
-  // Two audiences answer this questionnaire: the platform/infra team (facts
-  // inherent to the model and the cloud hosting it — mostly machine-settled)
-  // and the team consuming the model (judgments about THIS use).
+  // Two teams answer this questionnaire: the infrastructure team owns the
+  // model/platform facts (mostly machine-settled), the developer team building
+  // on the model owns the use-case judgments.
   const ownerSections = [
     {
       key: "platform",
-      title: "Model & platform",
+      title: "Infrastructure team",
+      subtitle: "model & platform controls",
       blurb:
-        "Inherent to the model and the cloud platform hosting it — answerable by the infra/governance team. Most of these are settled automatically from cloud facts and documented platform commitments.",
+        "Owned by the infrastructure / cloud-governance team: facts about the model itself and the cloud platform hosting it (residency, network, encryption, filters, terms, certifications). Most settle automatically from cloud facts and documented platform commitments.",
       items: d.controls.filter((c) => c.owner !== "use_case"),
     },
     {
       key: "use_case",
-      title: "Your use case",
+      title: "Developer team",
+      subtitle: "use-case controls",
       blurb:
-        "Depends on how THIS deployment will be used — answered by the team consuming the model (intended use, oversight, evaluation for the task, incident runbook).",
+        "Owned by the developer team building on the model: judgments about THIS specific use (intended use, evaluation for the task, bias for affected users, oversight, incident runbook, impact).",
       items: d.controls.filter((c) => c.owner === "use_case"),
     },
   ].map((s) => ({
     ...s,
-    open: s.items.filter((c) => !c.answer || c.answer_source === "suggested").length,
+    needsAction: s.items.filter((c) => !c.answer || c.answer_source === "suggested").length,
     groups: FN_ORDER.map((fn) => ({ fn, items: s.items.filter((c) => c.nist_function === fn) })).filter(
       (g) => g.items.length > 0
     ),
@@ -281,13 +283,16 @@ export default function ReviewDetail() {
         <div>
           <BadgeLegend />
           {ownerSections.map((s) => (
-            <div key={s.key} className={`owner-section ${s.key}`}>
-              <div className="owner-head">
+            <details key={s.key} className={`owner-section ${s.key}`} open>
+              <summary className="owner-head">
                 <h2>{s.title}</h2>
-                <span className={`badge ${s.open === 0 ? "src-auto" : "src-suggested"}`}>
-                  {s.open === 0 ? "✓ nothing left to answer" : `${s.open} need${s.open === 1 ? "s" : ""} attention`}
+                <span className="muted owner-subtitle">{s.subtitle} · {s.items.length}</span>
+                <span className={`badge ${s.needsAction === 0 ? "src-auto" : "src-suggested"}`}>
+                  {s.needsAction === 0
+                    ? "✓ nothing left to answer"
+                    : `${s.needsAction} need${s.needsAction === 1 ? "s" : ""} attention`}
                 </span>
-              </div>
+              </summary>
               <p className="muted owner-blurb">{s.blurb}</p>
               {s.groups.map(({ fn, items }) => (
             <div key={fn}>
@@ -366,7 +371,7 @@ export default function ReviewDetail() {
               ))}
             </div>
               ))}
-            </div>
+            </details>
           ))}
         </div>
 
