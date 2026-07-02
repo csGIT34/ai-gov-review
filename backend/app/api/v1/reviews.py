@@ -24,6 +24,7 @@ from app.schemas import (
     RiskScoreOut,
     SubmitResultOut,
 )
+from app.services import policy as policy_service
 from app.services import precedent as precedent_svc
 from app.services import review_workflow as wf
 from app.services.errors import ConflictError, NotFoundError
@@ -57,7 +58,11 @@ def create_review(
         if source is None or not source.enabled:
             raise NotFoundError("Discovery source not found or disabled")
         discovered = resolve_discovered(
-            source, payload.vendor, payload.resource_id, payload.model_version
+            source,
+            payload.vendor,
+            payload.resource_id,
+            payload.model_version,
+            config=policy_service.driver_config(db, source),
         )
         model, _created = upsert_model(
             db, source=source, discovered=discovered, actor_id=user.id, request_ip=ip

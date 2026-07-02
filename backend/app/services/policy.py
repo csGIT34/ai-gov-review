@@ -116,17 +116,35 @@ def mark_framework_reviewed(
     return policy
 
 
+def source_approved_regions(db: Session, source: DiscoverySource) -> list[str]:
+    """Effective approved-regions list for one source's cloud: the global policy,
+    unless the source overrides its OWN cloud via config["approved_regions"].
+    Override values go through the same normalization as the admin PUT
+    (strip/dedupe; ignore bad types)."""
+    regions = list((get_policy(db).approved_regions or {}).get(source.cloud) or [])
+    override = source.config.get("approved_regions") if source.config else None
+    if source.cloud in KNOWN_CLOUDS and override is not None:
+        if isinstance(override, dict):
+            override = override.get(source.cloud)
+        if isinstance(override, list):
+            regions = _clean_regions(override)
+    return sorted(regions)
+
+
+def driver_config(db: Session, source: DiscoverySource) -> dict:
+    """The config dict handed to a discovery driver: the source's own config plus
+    the resolved approved-regions policy. Live drivers use `catalog_regions` to
+    scope catalog (not-yet-deployed) model listings to regions the org allows."""
+    cfg = dict(source.config or {})
+    cfg["catalog_regions"] = source_approved_regions(db, source)
+    return cfg
+
+
 def resolve_policy(db: Session, model: Model) -> Policy:
     """Resolve the effective per-cloud Policy for a model (source override or global)."""
     regions: dict = {c: list((get_policy(db).approved_regions or {}).get(c) or []) for c in KNOWN_CLOUDS}
     if model.discovery_source_id is not None:
         source = db.get(DiscoverySource, model.discovery_source_id)
-        override = source.config.get("approved_regions") if (source and source.config) else None
-        # A source may only override its OWN cloud, and the values go through the
-        # same normalization as the admin PUT (strip/dedupe; ignore bad types).
-        if source and source.cloud in KNOWN_CLOUDS and override is not None:
-            if isinstance(override, dict):
-                override = override.get(source.cloud)
-            if isinstance(override, list):
-                regions[source.cloud] = _clean_regions(override)
+        if source is not None and source.cloud in KNOWN_CLOUDS:
+            regions[source.cloud] = source_approved_regions(db, source)
     return Policy({cloud: frozenset(v) for cloud, v in regions.items()})

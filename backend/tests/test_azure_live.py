@@ -7,6 +7,9 @@ The fixture models a realistic footprint:
   * a fine-tuned gpt-4o (name contains .ft-) — its own logical model
   * a Speech account (kind != OpenAI/AIServices) that must be ignored
   * account paging via nextLink
+  * a region CATALOG (locations/{region}/models) with gpt-4o (same version as
+    the deployment — deduped) and gpt-4o-mini (not deployed — surfaced as a
+    catalog model so a review can start with zero resources created)
 """
 from __future__ import annotations
 
@@ -53,10 +56,45 @@ def _dep(name: str, version: str, fmt: str = "OpenAI", *, rai: str | None, upgra
     }
 
 
+# Default approved regions == what the driver queries for the catalog when no
+# config is passed (sorted, matching _catalog_scope).
+CATALOG_REGIONS = ["eastus", "eastus2", "northeurope", "uksouth", "westeurope", "westus3"]
+
+
+def _cat(name: str, version: str, fmt: str = "OpenAI", kind: str = "OpenAI",
+         caps: dict | None = None, lifecycle: str = "GenerallyAvailable") -> dict:
+    return {
+        "kind": kind,
+        "skuName": "Standard",
+        "model": {
+            "format": fmt, "name": name, "version": version,
+            "capabilities": caps or {"chatCompletion": "true"},
+            "lifecycleStatus": lifecycle,
+            "deprecation": {"inference": "2026-12-01T00:00:00Z"},
+        },
+    }
+
+
+def _catalog_urls(sub: str, per_region: dict | None = None) -> dict:
+    per_region = per_region or {}
+    return {
+        f"{ARM}/subscriptions/{sub}/providers/Microsoft.CognitiveServices"
+        f"/locations/{r}/models?api-version={_API}": {"value": per_region.get(r, [])}
+        for r in CATALOG_REGIONS
+    }
+
+
 # Canned ARM responses, keyed by URL. Account list is split over two pages to
 # exercise nextLink handling.
 PAGE2 = f"{ARM}/subscriptions/{SUB}/providers/Microsoft.CognitiveServices/accounts?page=2"
 RESPONSES = {
+    **_catalog_urls(SUB, {
+        "eastus": [
+            _cat("gpt-4o", "2024-11-20"),          # already deployed -> deduped
+            _cat("gpt-4o-mini", "2024-07-18"),     # catalog-only
+        ],
+        "eastus2": [_cat("gpt-4o-mini", "2024-07-18")],
+    }),
     f"{ARM}/subscriptions/{SUB}/providers/Microsoft.CognitiveServices/accounts?api-version={_API}": {
         "value": [
             _acct(ACCT_EAST, "eastus", pna="Disabled", local_auth_disabled=True, cmk=True),
@@ -227,6 +265,7 @@ def test_divergent_filters_fail_closed_with_explanation():
 
     acct2 = f"{RG}/accounts/aoai-west"
     responses = {
+        **_catalog_urls(SUB),
         f"{ARM}/subscriptions/{SUB}/providers/Microsoft.CognitiveServices/accounts?api-version={_API}": {
             "value": [
                 _acct(ACCT_EAST, "eastus", pna="Disabled", local_auth_disabled=True, cmk=True),
@@ -274,6 +313,103 @@ def test_unknown_format_slug_has_no_terms():
     from app.discovery.azure_live import _VENDOR_TERMS, _slug
     assert _slug("Contoso Labs") == "contoso-labs"
     assert "contoso-labs" not in _VENDOR_TERMS  # terms=None -> precedent fails closed
+
+
+def _empty_sub_driver():
+    """A subscription with ZERO Cognitive Services resources — discovery must
+    still work, entirely from the region catalog."""
+    responses = {
+        f"{ARM}/subscriptions/{SUB}/providers/Microsoft.CognitiveServices/accounts?api-version={_API}": {
+            "value": [],
+        },
+        **_catalog_urls(SUB, {
+            "eastus": [
+                _cat("gpt-4o-mini", "2024-07-18"),
+                _cat("Llama-3.3-70B-Instruct", "1", fmt="Meta", kind="AIServices"),
+                _cat("whisper", "001", kind="SpeechServices"),  # ignored kind
+            ],
+            "eastus2": [_cat("gpt-4o-mini", "2024-07-18",
+                             caps={"chatCompletion": "true", "imageInput": "true"})],
+        }),
+    }
+    return AzureLiveDriver(fetch=lambda url: responses[url])
+
+
+def test_catalog_discovery_with_zero_resources():
+    d = _empty_sub_driver()
+    assert d.list_vendors(SUB) == ["meta", "openai"]
+
+    mini = next(m for m in d.list_models(SUB, "openai") if m.model_name == "gpt-4o-mini")
+    assert mini.provisioning_state == "NotDeployed"
+    assert mini.resource_id == f"azure:{SUB}:openai:gpt-4o-mini"
+    assert mini.regions == ["eastus", "eastus2"]  # merged catalog footprint
+    assert mini.label().endswith("— not deployed")
+    f = mini.facts
+    assert f["deployment_status"] == "catalog"
+    assert f["terms"]["id"] == "azure-openai-service-terms"
+    assert f["modality"] == "multimodal"  # imageInput in one region's catalog entry
+    # No resource exists, so no posture facts may be fabricated:
+    for key in ("public_network_access", "local_auth_disabled", "encryption_cmk",
+                "diagnostic_settings", "content_filter"):
+        assert key not in f
+
+    llama = d.list_models(SUB, "meta")[0]
+    assert llama.facts["terms"]["id"] == "llama-3.3-community-license"
+
+
+def test_deployed_model_wins_over_catalog(driver):
+    models = driver.list_models(SUB, "openai")
+    gpts = [m for m in models if m.model_name == "gpt-4o" and m.model_version == "2024-11-20"]
+    assert len(gpts) == 1  # the catalog copy is deduped away
+    assert gpts[0].provisioning_state != "NotDeployed"
+    assert gpts[0].facts["deployment_status"] == "deployed"
+    mini = next(m for m in models if m.model_name == "gpt-4o-mini")
+    assert mini.provisioning_state == "NotDeployed"
+    assert mini.regions == ["eastus", "eastus2"]
+
+
+def test_catalog_config_scoping_and_opt_out(driver):
+    # Narrow the catalog to one region -> the catalog footprint follows.
+    mini = next(m for m in driver.list_models(SUB, "openai", {"catalog_regions": ["eastus"]})
+                if m.model_name == "gpt-4o-mini")
+    assert mini.regions == ["eastus"]
+    # Opt out entirely -> only actually-deployed models remain.
+    names = {m.model_name for m in driver.list_models(SUB, "openai", {"include_catalog": False})}
+    assert "gpt-4o-mini" not in names
+    assert "gpt-4o" in names
+
+
+def test_catalog_autoanswer_suggests_never_blocks():
+    """A not-yet-deployed model must NOT be auto-rejected by the KO gates
+    (safety_filters / data_residency are KO): posture controls come back as
+    SUGGESTED 'partial' pre-deployment plans the reviewer confirms — and being
+    'suggested', they are carryable by the precedent fast-track."""
+    from app.services.autoanswer import collect
+    from app.services.scoring import FAILING_ANSWERS
+
+    d = _empty_sub_driver()
+    mini = next(m for m in d.list_models(SUB, "openai") if m.model_name == "gpt-4o-mini")
+    results = collect(mini.facts, "openai", cloud="azure")
+    for key in ("data_residency", "safety_filters", "access_controls",
+                "encryption_logging", "monitoring", "version_change_process"):
+        assert results[key].source == "suggested", key
+        assert results[key].answer == "partial", key
+        assert results[key].answer not in FAILING_ANSWERS
+        assert "not deployed" in results[key].rationale
+    # Identity controls still work from catalog facts:
+    assert results["categorization"].answer == "yes"
+
+
+def test_catalog_residency_fails_closed_on_unapproved_region():
+    """Catalog listings are policy-scoped upstream; if a region outside policy
+    sneaks in (misconfigured source), residency must say so, not soft-pass."""
+    from app.services.autoanswer import collect
+
+    facts = {"deployment_status": "catalog", "regions": ["brazilsouth", "eastus"]}
+    r = collect(facts, "openai", cloud="azure")["data_residency"]
+    assert r.source == "suggested"
+    assert r.answer == "no"
+    assert "brazilsouth" in r.rationale
 
 
 def test_inventory_cached_across_calls(driver):
@@ -335,6 +471,48 @@ def test_live_shaped_models_flow_through_review(client, driver):
         assert "brazilsouth" in residency["auto_rationale"]
         filters = next(c for c in controls if c["control_key"] == "safety_filters")
         assert filters["answer"] == "no"  # weakest regional deployment lacks a RAI policy
+    finally:
+        register_driver(StubAzureDriver())
+        os.environ.pop("AZURE_SUBSCRIPTION_ID", None)
+        config.get_settings.cache_clear()
+
+
+def test_catalog_model_review_through_api(client, driver):
+    """End-to-end: a review can be opened on a model that exists ONLY in the
+    region catalog (zero Azure resources created), and the KO gates don't
+    auto-reject it — posture controls arrive as suggested pre-deployment plans."""
+    import os
+    import app.config as config
+    from app.discovery.base import register_driver
+    from app.discovery.stub import StubAzureDriver
+    from tests.conftest import REVIEWER
+
+    register_driver(driver)
+    try:
+        api = "/api/v1"
+        sources = client.get(f"{api}/discovery/sources", headers=REVIEWER).json()
+        sid = next(s["id"] for s in sources if s["cloud"] == "azure")
+        os.environ["AZURE_SUBSCRIPTION_ID"] = SUB
+        config.get_settings.cache_clear()
+
+        models = client.get(
+            f"{api}/discovery/sources/{sid}/vendors/openai/models", headers=REVIEWER
+        ).json()
+        mini = next(m for m in models if m["model_name"] == "gpt-4o-mini")
+        assert mini["provisioning_state"] == "NotDeployed"
+        assert mini["label"].endswith("— not deployed")
+
+        r = client.post(f"{api}/reviews", headers=REVIEWER, json={
+            "source_id": sid, "vendor": "openai",
+            "resource_id": mini["resource_id"], "model_version": mini["model_version"],
+        })
+        assert r.status_code == 201, r.text
+        controls = client.get(f"{api}/reviews/{r.json()['id']}/controls", headers=REVIEWER).json()
+        for key in ("data_residency", "safety_filters", "access_controls"):
+            c = next(c for c in controls if c["control_key"] == key)
+            assert c["answer"] == "partial", key
+            assert c["answer_source"] == "suggested", key
+            assert "not deployed" in c["auto_rationale"], key
     finally:
         register_driver(StubAzureDriver())
         os.environ.pop("AZURE_SUBSCRIPTION_ID", None)

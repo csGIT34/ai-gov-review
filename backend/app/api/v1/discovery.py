@@ -16,6 +16,7 @@ from app.discovery import get_driver
 from app.discovery.base import discovery_cache
 from app.models import DiscoverySource, User
 from app.schemas import DiscoveredModelOut, SourceCreate, SourceOut
+from app.services.policy import driver_config
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
@@ -72,7 +73,7 @@ def list_vendors(
     if cached is not None:
         return cached
     try:
-        vendors = get_driver(source.cloud).list_vendors(source.scope, source.config)
+        vendors = get_driver(source.cloud).list_vendors(source.scope, driver_config(db, source))
     except KeyError:
         raise HTTPException(status_code=501, detail=f"No driver for cloud '{source.cloud}'")
     discovery_cache.set(cache_key, vendors)
@@ -94,7 +95,9 @@ def list_models(
     cached = discovery_cache.get(cache_key)
     if cached is None:
         try:
-            discovered = get_driver(source.cloud).list_models(source.scope, vendor, source.config)
+            discovered = get_driver(source.cloud).list_models(
+                source.scope, vendor, driver_config(db, source)
+            )
         except KeyError:
             raise HTTPException(status_code=501, detail=f"No driver for cloud '{source.cloud}'")
         cached = [

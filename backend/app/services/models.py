@@ -11,11 +11,15 @@ from app.services.errors import NotFoundError
 
 
 def resolve_discovered(
-    source: DiscoverySource, vendor: str, resource_id: str, model_version: str | None
+    source: DiscoverySource,
+    vendor: str,
+    resource_id: str,
+    model_version: str | None,
+    config: dict | None = None,
 ) -> DiscoveredModel:
     """Re-query the driver so the server, not the client, is the source of truth."""
     driver = get_driver(source.cloud)
-    for dm in driver.list_models(source.scope, vendor, source.config):
+    for dm in driver.list_models(source.scope, vendor, config or source.config):
         if dm.resource_id == resource_id and (dm.model_version or None) == (model_version or None):
             return dm
     raise NotFoundError(

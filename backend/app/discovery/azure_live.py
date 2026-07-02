@@ -11,6 +11,15 @@ account/deployment that serves it. `facts` are merged FAIL-CLOSED: the worst
 security posture anywhere in the footprint wins, so one weak regional
 deployment can't hide behind a hardened one.
 
+Two inventory layers:
+  * DEPLOYED — accounts + deployments actually present in the subscription;
+    full resource posture facts.
+  * CATALOG — models Azure OFFERS in the org's approved regions
+    (locations/{region}/models), so a review can start before any resource is
+    created. Catalog entries carry facts.deployment_status="catalog" and NO
+    posture facts (there is no resource to read them from); a deployed model
+    with the same (vendor, name, version) always wins.
+
 Auth (keyless / least-privilege, tried in order):
   1. AZURE_ACCESS_TOKEN env — a short-lived bearer from
      `az account get-access-token` for containerized dev; expires in ~1h and
@@ -30,6 +39,7 @@ import httpx
 
 from app.config import get_settings
 from app.discovery.base import DiscoveredModel, DiscoveryDriver
+from app.services.autoanswer import DEFAULT_APPROVED_REGIONS
 from app.services.errors import ValidationError
 
 ARM = "https://management.azure.com"
@@ -124,7 +134,7 @@ class AzureLiveDriver(DiscoveryDriver):
         self._fetch = fetch or self._default_fetch
         self._tokens = _TokenSource()
         self._inventory_ttl = inventory_ttl
-        self._inv_cache: dict[str, tuple[float, list[DiscoveredModel]]] = {}
+        self._inv_cache: dict[tuple, tuple[float, list[DiscoveredModel]]] = {}
 
     # -- transport --
 
@@ -164,12 +174,27 @@ class AzureLiveDriver(DiscoveryDriver):
     # -- interface --
 
     def list_vendors(self, scope: str, config: dict | None = None) -> list[str]:
-        return sorted({m.vendor for m in self._inventory(self._subscription(scope))})
+        inv = self._inventory(self._subscription(scope), self._catalog_scope(config))
+        return sorted({m.vendor for m in inv})
 
     def list_models(self, scope: str, vendor: str, config: dict | None = None) -> list[DiscoveredModel]:
-        return [m for m in self._inventory(self._subscription(scope)) if m.vendor == vendor]
+        inv = self._inventory(self._subscription(scope), self._catalog_scope(config))
+        return [m for m in inv if m.vendor == vendor]
 
     # -- helpers --
+
+    @staticmethod
+    def _catalog_scope(config: dict | None) -> tuple[str, ...]:
+        """Regions whose model CATALOG we list (so reviews can start before any
+        resource exists). Scoped to the org's approved-regions policy — passed in
+        by the API layer as config["catalog_regions"] — because a model only
+        matters if it can be deployed somewhere policy allows. Empty when the
+        source opts out via config["include_catalog"] = false."""
+        cfg = config or {}
+        if not cfg.get("include_catalog", True):
+            return ()
+        regions = cfg.get("catalog_regions") or DEFAULT_APPROVED_REGIONS["azure"]
+        return tuple(sorted({r for r in regions if isinstance(r, str) and r}))
 
     def _subscription(self, scope: str) -> str:
         if _UUID_RE.match(scope or ""):
@@ -182,15 +207,16 @@ class AzureLiveDriver(DiscoveryDriver):
             "scope to the subscription GUID, or set AZURE_SUBSCRIPTION_ID."
         )
 
-    def _inventory(self, sub: str) -> list[DiscoveredModel]:
-        cached = self._inv_cache.get(sub)
+    def _inventory(self, sub: str, catalog_regions: tuple[str, ...]) -> list[DiscoveredModel]:
+        key = (sub, catalog_regions)
+        cached = self._inv_cache.get(key)
         if cached and time.monotonic() - cached[0] < self._inventory_ttl:
             return cached[1]
-        models = self._build_inventory(sub)
-        self._inv_cache[sub] = (time.monotonic(), models)
+        models = self._build_inventory(sub, catalog_regions)
+        self._inv_cache[key] = (time.monotonic(), models)
         return models
 
-    def _build_inventory(self, sub: str) -> list[DiscoveredModel]:
+    def _build_inventory(self, sub: str, catalog_regions: tuple[str, ...]) -> list[DiscoveredModel]:
         accounts = self._get_paged(
             f"{ARM}/subscriptions/{sub}/providers/Microsoft.CognitiveServices/accounts"
             f"?api-version={_API_ACCOUNTS}"
@@ -234,10 +260,85 @@ class AzureLiveDriver(DiscoveryDriver):
                     "capabilities": dprops.get("capabilities") or {},
                 })
 
-        return sorted(
-            (self._merge(sub, vendor, name, version, obs)
-             for (vendor, name, version), obs in groups.items()),
-            key=lambda m: (m.vendor, m.model_name),
+        models = [
+            self._merge(sub, vendor, name, version, obs)
+            for (vendor, name, version), obs in groups.items()
+        ]
+        models.extend(self._catalog_models(sub, catalog_regions, deployed=set(groups)))
+        return sorted(models, key=lambda m: (m.vendor, m.model_name, m.model_version or ""))
+
+    def _catalog_models(
+        self, sub: str, regions: tuple[str, ...], deployed: set[tuple]
+    ) -> list[DiscoveredModel]:
+        """Models Azure OFFERS in the given regions but that have no deployment in
+        the subscription — reviewable before any resource is created (zero cost,
+        Reader role only). A deployed (vendor, name, version) always wins: it has
+        real posture facts."""
+        catalog: dict[tuple, dict] = {}
+        for region in regions:
+            items = self._get_paged(
+                f"{ARM}/subscriptions/{sub}/providers/Microsoft.CognitiveServices"
+                f"/locations/{region}/models?api-version={_API_ACCOUNTS}"
+            )
+            for item in items:
+                if item.get("kind") not in _MODEL_KINDS:
+                    continue
+                model = item.get("model") or {}
+                name = model.get("name")
+                if not name:
+                    continue
+                vendor = _slug(model.get("format") or "unknown")
+                key = (vendor, name, model.get("version"))
+                if key in deployed:
+                    continue
+                entry = catalog.setdefault(key, {
+                    "format": model.get("format"),
+                    "regions": set(),
+                    "sku": item.get("skuName"),
+                    "capabilities": {},
+                    "lifecycle": model.get("lifecycleStatus"),
+                    "deprecation": (model.get("deprecation") or {}).get("inference"),
+                })
+                entry["regions"].add(region)
+                entry["capabilities"].update(model.get("capabilities") or {})
+        return [
+            self._catalog_model(sub, vendor, name, version, entry)
+            for (vendor, name, version), entry in catalog.items()
+        ]
+
+    def _catalog_model(
+        self, sub: str, vendor: str, name: str, version: str | None, entry: dict
+    ) -> DiscoveredModel:
+        regions = sorted(entry["regions"])
+        caps = {k.lower() for k in entry["capabilities"]}
+        # Posture facts (network, CMK, filters, diagnostics) are intentionally
+        # ABSENT: there is no resource to read them from. deployment_status tells
+        # the auto-answer engine to treat them as a pre-deployment plan to confirm
+        # rather than a measured "no".
+        facts = {
+            "deployment_status": "catalog",
+            "regions": regions,
+            "lifecycle_status": entry["lifecycle"],
+            "deprecation_inference": entry["deprecation"],
+            "min_tls": "1.2",
+            "min_tls_source": "platform-enforced (Azure AI services require TLS 1.2+)",
+            "is_finetuned": False,
+            "modality": "multimodal"
+            if any(("image" in c or "vision" in c or "audio" in c) for c in caps) else "text",
+            "terms": _VENDOR_TERMS.get(vendor),
+        }
+        return DiscoveredModel(
+            vendor=vendor,
+            model_name=name,
+            model_version=version,
+            model_format=entry["format"],
+            resource_id=f"azure:{sub}:{vendor}:{name}",
+            resource_kind="CognitiveServices/locations/models",
+            subscription_or_project=sub,
+            regions=regions,
+            sku=entry["sku"],
+            provisioning_state="NotDeployed",
+            facts=facts,
         )
 
     def _merge(self, sub: str, vendor: str, name: str, version: str | None,
@@ -248,6 +349,7 @@ class AzureLiveDriver(DiscoveryDriver):
         upgrade_opts = {o["version_upgrade_option"] for o in obs}
         caps = {k.lower() for o in obs for k in o["capabilities"]}
         facts = {
+            "deployment_status": "deployed",
             "regions": regions,
             # A missing content filter on ANY regional deployment is a gap.
             "content_filter": next(iter(filters)) if len(filters) == 1 and None not in filters else None,

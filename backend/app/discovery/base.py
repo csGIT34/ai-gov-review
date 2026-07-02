@@ -40,7 +40,8 @@ class DiscoveredModel:
         v = f":{self.model_version}" if self.model_version else ""
         n = len(self.regions)
         loc = f" ({n} region{'s' if n != 1 else ''})" if n else ""
-        return f"{self.model_name}{v}{loc}"
+        tag = " — not deployed" if self.provisioning_state == "NotDeployed" else ""
+        return f"{self.model_name}{v}{loc}{tag}"
 
     def as_dict(self) -> dict:
         return asdict(self)

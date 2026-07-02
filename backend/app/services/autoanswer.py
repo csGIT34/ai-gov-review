@@ -277,6 +277,70 @@ MANUAL_GUIDANCE: dict[str, str] = {
 MANUAL_CONTROLS = set(MANUAL_GUIDANCE.keys())
 
 
+def _catalog_overrides(facts: dict, docs: dict, policy: Policy, cloud: str | None) -> dict[str, AutoResult]:
+    """Pre-deployment answers for a CATALOG model (facts.deployment_status ==
+    "catalog"): the model is offered by the cloud but no resource exists yet, so
+    there is no posture to measure. Answering "no"/"unknown" would auto-reject
+    every not-yet-deployed model through the KO gates; answering "yes" would be
+    false confidence. So these are SUGGESTED "partial" — the reviewer confirms
+    the deployment plan, and the answers carry via precedent like any other
+    human-owned judgment."""
+    regions = sorted(facts.get("regions") or [])
+    approved = policy.approved_regions.get(cloud, frozenset())
+    offenders = [r for r in regions if r not in approved]
+    note = "Model is in the cloud catalog but not deployed yet; "
+    out = {
+        "data_residency": _suggest(
+            "partial",
+            note + f"it is offered in {len(regions)} approved region(s) "
+            f"({', '.join(regions)}). Confirm the deployment will target only "
+            "approved regions.",
+            None,
+        ),
+        "safety_filters": _suggest(
+            "partial",
+            note + "content-safety policies attach per deployment. Confirm a "
+            "content-filter policy will be required at deployment.",
+            docs.get("safety"),
+        ),
+        "access_controls": _suggest(
+            "partial",
+            note + "network/auth posture exists only on a deployed resource. "
+            "Confirm the deployment standard (private networking, key auth disabled).",
+            None,
+        ),
+        "encryption_logging": _suggest(
+            "partial",
+            note + "TLS 1.2+ is platform-enforced; confirm customer-managed-key "
+            "encryption in the deployment standard.",
+            None,
+        ),
+        "monitoring": _suggest(
+            "partial",
+            note + "confirm diagnostic log routing will be enabled at deployment.",
+            None,
+        ),
+        "version_change_process": _suggest(
+            "partial",
+            note + "confirm the deployment will pin the model version (NoAutoUpgrade).",
+            None,
+        ),
+    }
+    if not regions or offenders:
+        # Catalog listings are policy-scoped upstream, so offenders here mean a
+        # misconfigured source — surface it instead of a soft "partial".
+        out["data_residency"] = _suggest(
+            "no",
+            note + (
+                f"it is offered in region(s) outside the approved {cloud} "
+                f"data-residency policy: {', '.join(offenders)}."
+                if offenders else "no candidate regions were reported."
+            ),
+            None,
+        )
+    return out
+
+
 def collect(
     facts: dict | None, vendor: str, policy: Policy | None = None, cloud: str | None = None
 ) -> dict[str, AutoResult]:
@@ -291,4 +355,8 @@ def collect(
             out[key] = result
     # Residency needs the resolved policy + the model's cloud.
     out["data_residency"] = _data_residency(facts, vendor, docs, policy, cloud)
+    # A catalog (not-yet-deployed) model has no resource posture to measure —
+    # replace the posture answers with pre-deployment suggestions.
+    if facts.get("deployment_status") == "catalog":
+        out.update(_catalog_overrides(facts, docs, policy, cloud))
     return out

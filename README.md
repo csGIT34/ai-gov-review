@@ -190,6 +190,26 @@ Governing terms (`facts.terms`) are derived from the model publisher's standard
 Azure terms; vendors without a known terms mapping get none, which disables the
 precedent fast-track (fail closed).
 
+**No resources required — the region catalog.** You don't have to deploy anything
+to review a model. Alongside deployed models, the driver lists the models Azure
+*offers* in your approved regions (`locations/{region}/models` — the same data as
+`az cognitiveservices model list -l <region>`), so a governance review can start
+**before** any resource is created, at zero cost. Catalog models show as
+**“not deployed”** and carry `facts.deployment_status="catalog"`; a deployed model
+with the same (vendor, name, version) always wins, with its real posture facts.
+The catalog is scoped to the org's approved-regions policy (per-source
+`config.approved_regions` override respected); `config.include_catalog: false`
+turns it off for a source.
+
+Because a catalog model has no resource, there is **no posture to measure** — and
+answering *No/Unknown* would auto-reject every not-yet-deployed model through the
+KO gates. So the six posture controls (residency, safety filters, access controls,
+encryption, monitoring, version pinning) arrive as **suggested "partial"**
+pre-deployment plans the reviewer confirms ("confirm a content-filter policy will
+be required at deployment", …). Being *suggested*, they're carryable by the
+precedent fast-track. Deploy later and re-review: the same `resource_id` picks up
+the real facts, and the auto-answers recompute from measured posture.
+
 **Credentials (keyless, in order):**
 
 1. `AZURE_ACCESS_TOKEN` — a short-lived bearer for containerized dev:
