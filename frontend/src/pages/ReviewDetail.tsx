@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { AdoptResult, ApiError, Control, Decision, Me, Precedent, ReviewDetail as RD, RiskScore, api } from "../api";
 import {
   BadgeLegend,
@@ -20,6 +20,7 @@ const TERMINAL = ["approved", "approved_with_conditions", "rejected"];
 
 export default function ReviewDetail() {
   const { id } = useParams();
+  const nav = useNavigate();
   const [d, setD] = useState<RD | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [prec, setPrec] = useState<Precedent | null>(null);
@@ -33,6 +34,10 @@ export default function ReviewDetail() {
   const [conditions, setConditions] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
   const [iAmOwner, setIAmOwner] = useState(false);
+
+  // delete: first click arms, second click deletes; decided reviews need a reason
+  const [delArmed, setDelArmed] = useState(false);
+  const [delReason, setDelReason] = useState("");
 
   // isStale guards the fire-and-forget fetches: navigating to another review
   // re-runs the [id] effect without unmounting, so a slow response for the OLD
@@ -55,6 +60,7 @@ export default function ReviewDetail() {
     setError(null); setMsg(null);
     setD(null); setPrec(null); setDecision(null);
     setJustification(""); setConditions(""); setOverrideReason(""); setIAmOwner(false);
+    setDelArmed(false); setDelReason("");
     reload(() => stale).catch((e) => { if (!stale) setError(e.message); });
     api.get<Me>("/me").then(setMe).catch(() => {});
     return () => { stale = true; };
@@ -90,6 +96,25 @@ export default function ReviewDetail() {
   const score = d.current_score;
   const isApprover = me?.roles.some((r) => r === "approver" || r === "admin");
   const isAdmin = me?.roles.includes("admin");
+  const isDecided = TERMINAL.includes(d.state);
+
+  async function removeReview() {
+    if (!delArmed) {
+      setDelArmed(true);
+      return;
+    }
+    setBusy(true); setError(null);
+    try {
+      const q = isDecided ? `?reason=${encodeURIComponent(delReason.trim())}` : "";
+      await api.del(`/reviews/${id}${q}`);
+      nav("/");
+    } catch (e) {
+      setDelArmed(false);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function patchLocal(cid: string, patch: Partial<Control>) {
     setD((prev) => (prev ? { ...prev, controls: prev.controls.map((c) => (c.id === cid ? { ...c, ...patch } : c)) } : prev));
@@ -438,6 +463,36 @@ export default function ReviewDetail() {
               {decision.conditions && <div className="muted">Conditions: {decision.conditions}</div>}
               <div className="muted" style={{ marginTop: "0.4rem" }}>{decision.justification}</div>
               <div className="muted" style={{ fontSize: "0.75rem", marginTop: "0.3rem" }}>{fmtDate(decision.decided_at)}</div>
+            </div>
+          )}
+
+          {(!isDecided || isAdmin) && (
+            <div className="card danger-zone">
+              <h3>Danger zone</h3>
+              {isDecided ? (
+                <p className="muted" style={{ fontSize: "0.8rem" }}>
+                  This review is a decided governance record. Only an admin may delete it,
+                  a reason is required, and the deletion is audited. A review other reviews
+                  used as their fast-track precedent cannot be deleted.
+                </p>
+              ) : (
+                <p className="muted" style={{ fontSize: "0.8rem" }}>
+                  Deletes this open review and its answers (audited). The model itself is unaffected.
+                </p>
+              )}
+              {isDecided && (
+                <>
+                  <label>Reason (required)</label>
+                  <textarea value={delReason} onChange={(e) => setDelReason(e.target.value)} />
+                </>
+              )}
+              <button
+                className={delArmed ? "danger" : "secondary"}
+                disabled={busy || (isDecided && !delReason.trim())}
+                onClick={removeReview}
+              >
+                {delArmed ? "Click again to permanently delete" : "Delete review"}
+              </button>
             </div>
           )}
         </div>

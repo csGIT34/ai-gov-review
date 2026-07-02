@@ -25,7 +25,7 @@ from app.models import (
     utcnow,
 )
 from app.services import audit, autoanswer, policy
-from app.services.errors import ConflictError, NotFoundError, ValidationError
+from app.services.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.services.questionnaire import Questionnaire, get_questionnaire
 from app.services.scoring import RiskResult, ScoredControl, score_controls
 
@@ -122,6 +122,74 @@ def get_review(db: Session, review_id: uuid.UUID) -> Review:
     if review is None:
         raise NotFoundError("Review not found")
     return review
+
+
+def delete_review(
+    db: Session,
+    *,
+    review: Review,
+    actor_id: uuid.UUID,
+    is_admin: bool,
+    reason: str | None = None,
+    request_ip: str | None = None,
+) -> None:
+    """Delete a review (controls/scores/decisions cascade).
+
+    Open (undecided) reviews: any reviewer — abandoned or duplicate reviews are
+    clutter, not records. Decided reviews are governance records: only an admin
+    may delete one, a reason is mandatory, and a review that other reviews cite
+    as their fast-track precedent can never be deleted. The deletion itself is
+    audited (the review's existing audit entries are append-only and remain —
+    the hash chain is untouched)."""
+    from app.models.enums import DECISION_STATES
+
+    if review.state in {s.value for s in DECISION_STATES}:
+        if not is_admin:
+            raise ForbiddenError("Only an admin can delete a decided review.")
+        if not (reason or "").strip():
+            raise ValidationError("Deleting a decided review requires a reason.")
+
+    dependents = list(
+        db.execute(
+            select(Review.id).where(Review.precedent_review_id == review.id)
+        ).scalars()
+    )
+    if dependents:
+        raise ConflictError(
+            f"This review is the precedent for {len(dependents)} fast-tracked "
+            "review(s) and cannot be deleted.",
+            details={"dependent_review_ids": [str(i) for i in dependents]},
+        )
+
+    before = {
+        "model_id": str(review.model_id),
+        "state": review.state,
+        "trigger": review.trigger,
+        "opened_at": review.opened_at.isoformat() if review.opened_at else None,
+        "decided_at": review.decided_at.isoformat() if review.decided_at else None,
+        "reason": (reason or "").strip() or None,
+    }
+    model = db.get(Model, review.model_id)
+    if model is not None and model.current_review_id == review.id:
+        previous = db.execute(
+            select(Review)
+            .where(Review.model_id == model.id, Review.id != review.id)
+            .order_by(Review.opened_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        model.current_review_id = previous.id if previous else None
+
+    audit.record(
+        db,
+        action="review_deleted",
+        entity_type="review",
+        entity_id=review.id,
+        actor_id=actor_id,
+        before=before,
+        request_ip=request_ip,
+    )
+    db.delete(review)
+    db.flush()
 
 
 def answer_control(

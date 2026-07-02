@@ -164,3 +164,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .owner-head { display: flex; align-items: center; gap: 0.75rem; }
 .owner-head h2 { margin: 0; }
 .owner-blurb { font-size: 0.85rem; margin: 0.25rem 0 0.5rem; }
+
+.danger-zone { border-color: #6b2030; }
+.danger-zone h3 { color: #ff9db0; }
+.row-del { padding: 0.15rem 0.5rem; font-size: 0.75rem; }

@@ -45,6 +45,7 @@ export const api = {
   post: <T>(p: string, b?: unknown) => request<T>("POST", p, b),
   patch: <T>(p: string, b?: unknown) => request<T>("PATCH", p, b),
   put: <T>(p: string, b?: unknown) => request<T>("PUT", p, b),
+  del: <T = void>(p: string) => request<T>("DELETE", p),
 };
 
 // --- types (mirror the backend schemas) ---------------------------------------

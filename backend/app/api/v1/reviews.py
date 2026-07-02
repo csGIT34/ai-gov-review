@@ -118,6 +118,32 @@ def get_review(
     return detail
 
 
+@router.delete("/{review_id}", status_code=204)
+def delete_review(
+    review_id: uuid.UUID,
+    request: Request,
+    reason: str | None = Query(None, max_length=2000),
+    db: Session = Depends(db_session),
+    user: User = Depends(require_reviewer),
+) -> None:
+    """Delete a review. Open reviews: any reviewer (duplicates/abandoned work).
+    Decided reviews: admin only, reason mandatory, and never while other
+    reviews cite it as their fast-track precedent. The deletion is audited."""
+    from app.auth import has_role
+    from app.models.enums import Role
+
+    review = wf.get_review(db, review_id)
+    wf.delete_review(
+        db,
+        review=review,
+        actor_id=user.id,
+        is_admin=has_role(user.roles, Role.ADMIN.value),
+        reason=reason,
+        request_ip=client_ip(request),
+    )
+    db.commit()
+
+
 @router.patch("/{review_id}/assign", response_model=ReviewOut)
 def assign_review(
     review_id: uuid.UUID,

@@ -3,11 +3,14 @@ import { Link } from "react-router-dom";
 import { api, ModelOut, Review } from "../api";
 import { TierBadge, fmtDate, prettyState } from "../ui";
 
+const DECIDED = new Set(["approved", "approved_with_conditions", "rejected"]);
+
 export default function Dashboard() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [models, setModels] = useState<Record<string, ModelOut>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [confirmDel, setConfirmDel] = useState<string | null>(null); // review id armed for delete
 
   useEffect(() => {
     Promise.all([api.get<Review[]>("/reviews"), api.get<ModelOut[]>("/models")])
@@ -18,6 +21,20 @@ export default function Dashboard() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  async function remove(r: Review) {
+    if (confirmDel !== r.id) {
+      setConfirmDel(r.id); // first click arms; second click deletes
+      return;
+    }
+    setConfirmDel(null);
+    try {
+      await api.del(`/reviews/${r.id}`);
+      setReviews((prev) => prev.filter((x) => x.id !== r.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   const counts = reviews.reduce<Record<string, number>>((acc, r) => {
     acc[r.state] = (acc[r.state] || 0) + 1;
@@ -59,6 +76,7 @@ export default function Dashboard() {
                 <th>Tier</th>
                 <th>Score</th>
                 <th>Opened</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -76,6 +94,18 @@ export default function Dashboard() {
                     <td><TierBadge tier={m?.latest_tier ?? null} /></td>
                     <td>{m?.latest_score ?? "—"}</td>
                     <td className="muted">{fmtDate(r.opened_at)}</td>
+                    <td>
+                      {!DECIDED.has(r.state) && (
+                        <button
+                          className={confirmDel === r.id ? "danger row-del" : "secondary row-del"}
+                          title={confirmDel === r.id ? "Click again to permanently delete this open review" : "Delete this open review"}
+                          onMouseLeave={() => confirmDel === r.id && setConfirmDel(null)}
+                          onClick={() => remove(r)}
+                        >
+                          {confirmDel === r.id ? "confirm ✕" : "✕"}
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
