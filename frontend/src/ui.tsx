@@ -46,7 +46,7 @@ const WEIGHT_TITLE: Record<string, string> = {
 };
 
 export function Weight({ w }: { w: string }) {
-  return <span className={`badge ${w}`} title={WEIGHT_TITLE[w] || "risk weight"}>{w}</span>;
+  return <span className={`badge ${w}`} data-tip={WEIGHT_TITLE[w] || "risk weight"}>{w}</span>;
 }
 
 const SOURCE_TITLE: Record<string, string> = {
@@ -61,12 +61,12 @@ const SOURCE_TITLE: Record<string, string> = {
 export function SourceBadge({ source }: { source: string | null }) {
   const key = source || "manual";
   const t = SOURCE_TITLE[key];
-  if (source === "auto") return <span className="badge src-auto" title={t}>✓ auto</span>;
-  if (source === "attested") return <span className="badge src-attested" title={t}>✓ attested</span>;
-  if (source === "suggested") return <span className="badge src-suggested" title={t}>confirm</span>;
-  if (source === "human") return <span className="badge src-human" title={t}>reviewed</span>;
-  if (source === "carried") return <span className="badge src-carried" title={t}>carried</span>;
-  return <span className="badge src-manual" title={t}>manual</span>;
+  if (source === "auto") return <span className="badge src-auto" data-tip={t}>✓ auto</span>;
+  if (source === "attested") return <span className="badge src-attested" data-tip={t}>✓ attested</span>;
+  if (source === "suggested") return <span className="badge src-suggested" data-tip={t}>confirm</span>;
+  if (source === "human") return <span className="badge src-human" data-tip={t}>reviewed</span>;
+  if (source === "carried") return <span className="badge src-carried" data-tip={t}>carried</span>;
+  return <span className="badge src-manual" data-tip={t}>manual</span>;
 }
 
 // NIST AI 600-1 Generative-AI risk categories (the coloured control tags).

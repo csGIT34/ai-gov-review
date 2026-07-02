@@ -237,7 +237,7 @@ export default function ReviewDetail() {
         <span className="muted" style={{ fontSize: "0.75rem" }}>{d.model.resource_id}</span>
         {d.precedent_id && (
           <span>
-            <span className="badge src-carried" title="Judgment answers were adopted from a stored precedent (see Admin → Precedents).">fast-tracked</span>
+            <span className="badge src-carried" data-tip="Judgment answers were adopted from a stored precedent (see Admin → Precedents).">fast-tracked</span>
             {prec?.precedent?.source_review_id && (
               <> <Link to={`/reviews/${prec.precedent.source_review_id}`}>source review ↗</Link></>
             )}
@@ -311,14 +311,14 @@ export default function ReviewDetail() {
                     <div className="evidence-hint">Evidence to look for: {c.evidence_needed}</div>
                   )}
                   <div className="meta">
-                    <span className="badge" title={c.nist_control || "NIST AI RMF control"}>{c.control_id}</span>
+                    <span className="badge" data-tip={c.nist_control || "NIST AI RMF control"}>{c.control_id}</span>
                     <Weight w={c.weight} />
                     {c.is_ko && (
-                      <span className="badge ko" title="Knock-out control: a No/Unknown answer forces Tier 4 (blocked), regardless of score.">KNOCK-OUT</span>
+                      <span className="badge ko" data-tip="Knock-out control: a No/Unknown answer forces Tier 4 (blocked), regardless of score.">KNOCK-OUT</span>
                     )}
                     <SourceBadge source={c.answer_source} />
                     {c.gai_categories.map((g) => (
-                      <span key={g} className="badge" style={{ fontSize: "0.66rem" }} title={gaiTitle(g)}>{g}</span>
+                      <span key={g} className="badge" style={{ fontSize: "0.66rem" }} data-tip={gaiTitle(g)}>{g}</span>
                     ))}
                   </div>
                   <div className="answers">
@@ -356,16 +356,30 @@ export default function ReviewDetail() {
                     </div>
                   )}
                   {c.answer && (
-                    <div style={{ marginTop: "0.5rem" }}>
+                    <details className="evidence">
+                      <summary>
+                        Evidence & notes
+                        {(c.evidence_note || c.evidence_url) && (
+                          <span className="badge src-human" style={{ marginLeft: "0.5rem" }}>●</span>
+                        )}
+                      </summary>
+                      <textarea
+                        placeholder="What did you check, where, and what did you find? (optional — saved automatically)"
+                        rows={4}
+                        disabled={!editable}
+                        value={c.evidence_note || ""}
+                        onChange={(e) => patchLocal(c.id, { evidence_note: e.target.value })}
+                        onBlur={() => saveEvidence(c)}
+                      />
                       <input
-                        style={{ width: "100%" }}
-                        placeholder="evidence URL (optional)"
+                        style={{ width: "100%", marginTop: "0.35rem" }}
+                        placeholder="supporting link (optional)"
                         disabled={!editable}
                         value={c.evidence_url || ""}
                         onChange={(e) => patchLocal(c.id, { evidence_url: e.target.value })}
                         onBlur={() => saveEvidence(c)}
                       />
-                    </div>
+                    </details>
                   )}
                 </div>
               ))}
