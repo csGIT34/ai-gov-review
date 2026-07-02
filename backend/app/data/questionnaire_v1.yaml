@@ -30,6 +30,7 @@ controls:
     nist_function: MAP
     weight: high
     is_ko: true
+    owner: platform
     question: "Is there a published model card / system card that identifies the exact model name, version, provider, and architecture for this Azure/GCP endpoint?"
     evidence_needed: "Link to provider model/system card; captured model + version identifier from endpoint metadata."
     gai_categories: [value_chain]
@@ -39,6 +40,7 @@ controls:
     nist_function: GOVERN
     weight: high
     is_ko: false
+    owner: platform
     question: "Is the model provider a vetted/approved third party under an active contract or enterprise agreement (vs. an unmanaged/shadow deployment)?"
     evidence_needed: "Vendor contract or marketplace agreement ID; approved-vendor register entry; owning team/subscription."
     gai_categories: [value_chain]
@@ -48,6 +50,7 @@ controls:
     nist_function: MAP
     weight: high
     is_ko: false
+    owner: platform
     question: "Is the model's provenance and value chain documented — base model, fine-tuning data source, and all third-party components/dependencies?"
     evidence_needed: "Provenance statement, fine-tune dataset description, dependency/SBOM or component list."
     gai_categories: [value_chain, intellectual_property]
@@ -57,6 +60,7 @@ controls:
     nist_function: MAP
     weight: medium
     is_ko: false
+    owner: use_case
     question: "Are the intended purpose, in-scope use cases, and explicitly out-of-scope/prohibited uses documented and approved?"
     evidence_needed: "Documented intended-use statement and acceptable-use policy scoped to this deployment."
     gai_categories: [human_ai_config]
@@ -66,6 +70,7 @@ controls:
     nist_function: MAP
     weight: low
     is_ko: false
+    owner: platform
     question: "Is the model correctly categorized (foundation vs. fine-tuned, generative modality, task) and flagged as triggering the NIST AI 600-1 GenAI profile if generative?"
     evidence_needed: "System categorization record indicating modality, foundation/fine-tuned status, applicable profile."
     gai_categories: []
@@ -75,6 +80,7 @@ controls:
     nist_function: MEASURE
     weight: high
     is_ko: true
+    owner: platform
     question: "Are data-handling terms documented for prompts and outputs — whether inputs/outputs are retained, logged, or used for provider model training?"
     evidence_needed: "Provider data-usage/DPA terms; endpoint config showing training-opt-out and retention settings."
     gai_categories: [data_privacy]
@@ -84,6 +90,7 @@ controls:
     nist_function: GOVERN
     weight: high
     is_ko: true
+    owner: platform
     question: "Is the deployment region and data residency confirmed to keep prompt/response data within approved geographic/regulatory boundaries?"
     evidence_needed: "Azure region / GCP location of the resource; data-residency attestation; policy mapping to allowed regions."
     gai_categories: [data_privacy, information_security]
@@ -93,6 +100,7 @@ controls:
     nist_function: MEASURE
     weight: high
     is_ko: true
+    owner: platform
     question: "Are content-safety filters / guardrails enabled on the endpoint (e.g. Azure AI Content Safety, Vertex safety filters) covering hate, violence, sexual, self-harm?"
     evidence_needed: "Config of enabled safety filters and thresholds; test prompts showing blocking behavior."
     gai_categories: [dangerous_violent_hateful, obscene_abusive]
@@ -102,6 +110,7 @@ controls:
     nist_function: MEASURE
     weight: high
     is_ko: false
+    owner: platform
     question: "Is there evidence the model was tested/red-teamed for CBRN uplift, dangerous/violent content, and obscene/abusive content (incl. CSAM/NCII) before use?"
     evidence_needed: "Provider red-team/safety report or internal adversarial test results covering these GAI categories."
     gai_categories: [cbrn, dangerous_violent_hateful, obscene_abusive]
@@ -111,6 +120,7 @@ controls:
     nist_function: MEASURE
     weight: medium
     is_ko: false
+    owner: use_case
     question: "Are quantitative evaluation/benchmark results available for accuracy and confabulation/hallucination rate on tasks representative of the intended use?"
     evidence_needed: "Eval report or benchmark scores (factuality/groundedness); internal eval on representative prompts."
     gai_categories: [confabulation, information_integrity]
@@ -120,6 +130,7 @@ controls:
     nist_function: MEASURE
     weight: medium
     is_ko: false
+    owner: use_case
     question: "Has the model been assessed for harmful bias and fairness across relevant demographic groups?"
     evidence_needed: "Bias/fairness evaluation results from provider or internal testing; documented metrics and thresholds."
     gai_categories: [harmful_bias]
@@ -129,6 +140,7 @@ controls:
     nist_function: MEASURE
     weight: high
     is_ko: false
+    owner: use_case
     question: "Has the endpoint been assessed for GenAI information-security risks — prompt injection, jailbreak resistance, and insecure tool/plugin or function-calling exposure?"
     evidence_needed: "Security test results (prompt-injection/jailbreak); list of connected tools/plugins/functions and their scopes."
     gai_categories: [information_security]
@@ -138,6 +150,7 @@ controls:
     nist_function: MEASURE
     weight: low
     is_ko: false
+    owner: use_case
     question: "Is the model's transparency/explainability documented (known limitations, failure modes, confidence signals)?"
     evidence_needed: "Model card limitations section; documented known failure modes and guidance."
     gai_categories: [human_ai_config]
@@ -147,6 +160,7 @@ controls:
     nist_function: GOVERN
     weight: high
     is_ko: false
+    owner: platform
     question: "Are authentication and access controls on the endpoint enforced (managed identity / API-key rotation, RBAC, no public/anonymous access)?"
     evidence_needed: "IAM/RBAC config, key-management policy, network exposure (private endpoint vs public) from Azure/GCP."
     gai_categories: [information_security]
@@ -156,6 +170,7 @@ controls:
     nist_function: MEASURE
     weight: medium
     is_ko: false
+    owner: platform
     question: "Are prompts and responses encrypted in transit and at rest, and is logging configured without exposing sensitive data?"
     evidence_needed: "TLS enforcement, CMK/at-rest encryption settings, log-scrubbing/DLP configuration."
     gai_categories: [data_privacy, information_security]
@@ -165,6 +180,7 @@ controls:
     nist_function: MANAGE
     weight: medium
     is_ko: false
+    owner: platform
     question: "Is there continuous monitoring/telemetry on the endpoint for usage, abuse, drift, and anomalous access?"
     evidence_needed: "Monitoring dashboards/alerts (Azure Monitor / Cloud Logging); defined metrics and alert thresholds."
     gai_categories: [information_security, information_integrity]
@@ -174,6 +190,7 @@ controls:
     nist_function: MEASURE
     weight: medium
     is_ko: false
+    owner: platform
     question: "Is there a process to detect and re-review when the underlying model version changes or is deprecated by the provider?"
     evidence_needed: "Version-pinning config or change-detection process; provider deprecation/versioning policy."
     gai_categories: [value_chain]
@@ -183,6 +200,7 @@ controls:
     nist_function: MAP
     weight: medium
     is_ko: false
+    owner: platform
     question: "Are intellectual-property and licensing terms for the model and its outputs clear (commercial-use rights, IP indemnification, output ownership)?"
     evidence_needed: "Model license terms; provider IP indemnity clause; output-usage rights documentation."
     gai_categories: [intellectual_property]
@@ -192,6 +210,7 @@ controls:
     nist_function: GOVERN
     weight: medium
     is_ko: false
+    owner: use_case
     question: "Is there a defined human oversight / human-in-the-loop configuration appropriate to the use case to mitigate over-reliance and automation bias?"
     evidence_needed: "Documented human-review workflow; guidance to users on limitations and when to escalate."
     gai_categories: [human_ai_config]
@@ -201,6 +220,7 @@ controls:
     nist_function: MANAGE
     weight: medium
     is_ko: false
+    owner: use_case
     question: "Is there an incident-response and rollback plan for this model (who to contact, how to disable/block the endpoint, provider escalation path)?"
     evidence_needed: "Runbook naming risk owner, disable/kill-switch procedure, and provider support/escalation contacts."
     gai_categories: [information_security]
@@ -210,6 +230,7 @@ controls:
     nist_function: MANAGE
     weight: low
     is_ko: false
+    owner: platform
     question: "Are provider SLAs, security certifications, and responsible-AI commitments reviewed (e.g. SOC 2 / ISO 42001, uptime, vulnerability disclosure)?"
     evidence_needed: "Provider compliance attestations (SOC 2, ISO 27001/42001), SLA document, security contact/disclosure policy."
     gai_categories: [value_chain]
@@ -219,6 +240,7 @@ controls:
     nist_function: MAP
     weight: low
     is_ko: false
+    owner: use_case
     question: "Have potential impacts to individuals, groups, and society from this model's outputs in the intended context been assessed?"
     evidence_needed: "Impact assessment covering affected populations and plausible harms for the stated use case."
     gai_categories: [harmful_bias, information_integrity]
@@ -228,6 +250,7 @@ controls:
     nist_function: MEASURE
     weight: low
     is_ko: false
+    owner: use_case
     question: "Have environmental / cost-of-compute considerations for the expected inference volume been noted?"
     evidence_needed: "Estimated inference volume and associated compute/energy or cost footprint from provider metrics."
     gai_categories: [environmental]

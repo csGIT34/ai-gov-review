@@ -226,6 +226,9 @@ class ControlOut(ORMModel):
     weight: str
     gai_categories: list[str]
     is_ko: bool
+    # Answering team: "platform" (inherent to the model / hosting platform —
+    # infra + governance) or "use_case" (the team consuming the model).
+    owner: str | None = None
     answer: str | None
     evidence_url: str | None
     evidence_note: str | None
@@ -242,6 +245,10 @@ class ControlOut(ORMModel):
             self.nist_control = control_title(self.control_id)
         if self.nist_url is None:
             self.nist_url = control_url(self.control_id)
+        if self.owner is None:
+            from app.services.questionnaire import owner_of
+
+            self.owner = owner_of(self.control_key)
         return self
 
 

@@ -168,7 +168,31 @@ export default function ReviewDetail() {
     }
   }
 
-  const grouped = FN_ORDER.map((fn) => ({ fn, items: d.controls.filter((c) => c.nist_function === fn) }));
+  // Two audiences answer this questionnaire: the platform/infra team (facts
+  // inherent to the model and the cloud hosting it — mostly machine-settled)
+  // and the team consuming the model (judgments about THIS use).
+  const ownerSections = [
+    {
+      key: "platform",
+      title: "Model & platform",
+      blurb:
+        "Inherent to the model and the cloud platform hosting it — answerable by the infra/governance team. Most of these are settled automatically from cloud facts and documented platform commitments.",
+      items: d.controls.filter((c) => c.owner !== "use_case"),
+    },
+    {
+      key: "use_case",
+      title: "Your use case",
+      blurb:
+        "Depends on how THIS deployment will be used — answered by the team consuming the model (intended use, oversight, evaluation for the task, incident runbook).",
+      items: d.controls.filter((c) => c.owner === "use_case"),
+    },
+  ].map((s) => ({
+    ...s,
+    open: s.items.filter((c) => !c.answer || c.answer_source === "suggested").length,
+    groups: FN_ORDER.map((fn) => ({ fn, items: s.items.filter((c) => c.nist_function === fn) })).filter(
+      (g) => g.items.length > 0
+    ),
+  }));
 
   return (
     <div>
@@ -229,7 +253,16 @@ export default function ReviewDetail() {
       <div className="grid">
         <div>
           <BadgeLegend />
-          {grouped.map(({ fn, items }) => (
+          {ownerSections.map((s) => (
+            <div key={s.key} className={`owner-section ${s.key}`}>
+              <div className="owner-head">
+                <h2>{s.title}</h2>
+                <span className={`badge ${s.open === 0 ? "src-auto" : "src-suggested"}`}>
+                  {s.open === 0 ? "✓ nothing left to answer" : `${s.open} need${s.open === 1 ? "s" : ""} attention`}
+                </span>
+              </div>
+              <p className="muted owner-blurb">{s.blurb}</p>
+              {s.groups.map(({ fn, items }) => (
             <div key={fn}>
               <h3>{fn}</h3>
               {items.map((c) => (
@@ -278,6 +311,8 @@ export default function ReviewDetail() {
                       <strong>
                         {c.answer_source === "auto"
                           ? "Auto: "
+                          : c.answer_source === "attested"
+                          ? "Attested: "
                           : c.answer_source === "suggested"
                           ? "Suggested: "
                           : "Guidance: "}
@@ -301,6 +336,8 @@ export default function ReviewDetail() {
                     </div>
                   )}
                 </div>
+              ))}
+            </div>
               ))}
             </div>
           ))}

@@ -17,6 +17,9 @@ _VALID_FUNCTIONS = {f.value for f in NistFunction}
 _VALID_WEIGHTS = {w.value for w in Weight}
 
 
+_VALID_OWNERS = {"platform", "use_case"}
+
+
 @dataclass(frozen=True)
 class ControlTemplate:
     key: str
@@ -27,6 +30,10 @@ class ControlTemplate:
     question: str
     evidence_needed: str | None
     gai_categories: tuple[str, ...]
+    # Who can answer it: "platform" — inherent to the model / the cloud platform
+    # hosting it (infra + governance team); "use_case" — depends on how THIS
+    # deployment will be used (the consuming team).
+    owner: str = "platform"
 
 
 @dataclass(frozen=True)
@@ -55,6 +62,7 @@ class Questionnaire:
                     "question": c.question,
                     "evidence_needed": c.evidence_needed,
                     "gai_categories": list(c.gai_categories),
+                    "owner": c.owner,
                 }
                 for c in self.controls
             ],
@@ -71,6 +79,8 @@ def _validate(q: Questionnaire) -> None:
             raise ValueError(f"Control {c.key}: invalid nist_function {c.nist_function!r}")
         if c.weight not in _VALID_WEIGHTS:
             raise ValueError(f"Control {c.key}: invalid weight {c.weight!r}")
+        if c.owner not in _VALID_OWNERS:
+            raise ValueError(f"Control {c.key}: invalid owner {c.owner!r}")
 
 
 def load_questionnaire(path: Path | None = None) -> Questionnaire:
@@ -85,6 +95,7 @@ def load_questionnaire(path: Path | None = None) -> Questionnaire:
             question=c["question"],
             evidence_needed=c.get("evidence_needed"),
             gai_categories=tuple(c.get("gai_categories", []) or []),
+            owner=c.get("owner", "platform"),
         )
         for c in raw["controls"]
     )
@@ -102,3 +113,13 @@ def load_questionnaire(path: Path | None = None) -> Questionnaire:
 def get_questionnaire() -> Questionnaire:
     """Cached current questionnaire template."""
     return load_questionnaire()
+
+
+@functools.lru_cache
+def owner_of(control_key: str) -> str:
+    """Answering team for a control key ("platform" | "use_case"). Unknown keys
+    (e.g. from an older questionnaire snapshot) default to "platform"."""
+    for c in get_questionnaire().controls:
+        if c.key == control_key:
+            return c.owner
+    return "platform"

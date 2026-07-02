@@ -176,3 +176,24 @@ def test_confirm_positively_gives_tier1(client):
     res = client.post(f"{API}/reviews/{rid}/submit", headers=REVIEWER).json()
     assert res["score"]["tier"] == 1
     assert res["score"]["overall_score"] == 0.0
+
+
+def test_controls_grouped_by_answering_team(client):
+    """Every control declares its answering team: 'platform' (inherent to the
+    model / hosting platform — infra + governance) or 'use_case' (the consuming
+    team). All machine-settled answers land on the platform side."""
+    rid = _open_gpt4o(client)
+    controls = client.get(f"{API}/reviews/{rid}/controls", headers=REVIEWER).json()
+    owners = {c["control_key"]: c["owner"] for c in controls}
+    assert set(owners.values()) == {"platform", "use_case"}
+    use_case = {k for k, o in owners.items() if o == "use_case"}
+    assert use_case == {
+        "intended_use", "eval_accuracy", "bias_fairness", "infosec_genai",
+        "explainability", "human_oversight", "incident_response",
+        "impact_assessment", "environmental",
+    }
+    # auto + attested answers are all platform-side: an infra admin can settle
+    # their whole section without the consuming team.
+    for c in controls:
+        if c["answer_source"] in ("auto", "attested"):
+            assert c["owner"] == "platform", c["control_key"]

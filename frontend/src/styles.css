@@ -157,3 +157,10 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .legend-row .badge, .legend-row .tier { flex-shrink: 0; }
 .badge[title], .tier[title] { cursor: help; }
 .spacer-v { height: 0.6rem; }
+
+.owner-section { border-left: 3px solid var(--border); padding-left: 1rem; margin: 1.25rem 0 1.75rem; }
+.owner-section.platform { border-left-color: var(--accent); }
+.owner-section.use_case { border-left-color: var(--t2); }
+.owner-head { display: flex; align-items: center; gap: 0.75rem; }
+.owner-head h2 { margin: 0; }
+.owner-blurb { font-size: 0.85rem; margin: 0.25rem 0 0.5rem; }

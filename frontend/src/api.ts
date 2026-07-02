@@ -158,10 +158,11 @@ export interface Control {
   weight: string;
   gai_categories: string[];
   is_ko: boolean;
+  owner: "platform" | "use_case";
   answer: string | null;
   evidence_url: string | null;
   evidence_note: string | null;
-  answer_source: string | null; // auto | suggested | human | null(manual)
+  answer_source: string | null; // auto | attested | suggested | human | carried | null(manual)
   auto_answer: string | null;
   auto_rationale: string | null;
   auto_confidence: string | null;
