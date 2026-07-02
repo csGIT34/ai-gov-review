@@ -44,15 +44,45 @@ cloud provider's own data** — you shouldn't hand-answer "what region is this d
 in?" So when a review opens, the engine pre-fills what it can and leaves only the
 genuine judgment calls to a human.
 
-### Every control lands in one of three tiers
+### Every control lands in one of four tiers
 
 | Badge | Tier | Meaning | Reviewer action |
 |-------|------|---------|-----------------|
 | ✓ **auto** (green) | fact | Answered from an **objective cloud fact**. Accepted as-is. | none |
+| ✓ **attested** (teal) | attested | Answered from a **documented platform/vendor commitment** — the citation ships as the control's evidence link. Accepted as-is. | none (override allowed) |
 | **confirm** (amber) | suggested | A tentative answer derived from the **provider's documentation**, with an evidence link. | must confirm or override before submit |
 | **manual** (grey) | manual | **No reliable cloud signal** (org policy / procurement / process). | the human answers; a guidance note says what to confirm |
 
-For the current 23-control questionnaire that's **8 auto · 10 suggested · 5 manual**.
+For the current 23-control questionnaire on Azure OpenAI that's
+**8 auto · 4 attested · 6 suggested · 5 manual**.
+
+### Attested: the platforms document their own NIST adherence
+
+Microsoft and Google publish standing commitments that answer several controls
+**per platform**, not per model — so the engine cites the document instead of
+asking a reviewer to re-confirm it on every review
+(`app/services/attestations.py`, a curated registry keyed by cloud + publisher):
+
+- **Data handling** — Azure OpenAI data-privacy note (prompts/completions never
+  train Microsoft or OpenAI models; abuse-monitoring retention ≤ 30 days); Azure
+  AI Foundry data-processing terms for third-party publishers; Vertex AI
+  generative-AI data governance; Anthropic commercial terms.
+- **Certifications & SLAs** — SOC 2 Type 2, ISO/IEC 27001 and **ISO/IEC 42001**
+  (AI management system) attestations, plus each platform's published **NIST AI
+  RMF crosswalk** (Microsoft Service Trust Portal / Google compliance resource
+  center).
+- **IP indemnity** — Microsoft Customer Copyright Commitment (Azure OpenAI /
+  Microsoft models); Google generative-AI indemnified services; Anthropic
+  commercial-terms indemnity.
+- **Provider red-teaming** — Azure OpenAI transparency note; Google Responsible
+  AI docs; Anthropic system cards + Responsible Scaling Policy.
+
+Curation is fail-closed: only public, linkable documents; vendor-specific
+entries only where the document names that publisher; a withdrawn document means
+the entry is deleted and the control falls back to the suggested/manual path.
+Attested answers are **not carried** by the precedent fast-track (they're
+recomputed fresh, like auto facts) and a reviewer can always override one — the
+override re-owns the answer as `human`.
 
 ### The 8 auto controls read these cloud facts
 

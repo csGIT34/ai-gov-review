@@ -61,6 +61,7 @@ def open_review(
         model.facts, model.vendor, policy.resolve_policy(db, model), model.cloud
     )
     auto_count = 0
+    attested_count = 0
     suggested_count = 0
     for c in q.controls:
         cr = ControlResponse(
@@ -85,6 +86,8 @@ def open_review(
             cr.answered_at = utcnow()
             if r.source == "auto":
                 auto_count += 1
+            elif r.source == "attested":
+                attested_count += 1
             else:
                 suggested_count += 1
         elif c.key in autoanswer.MANUAL_GUIDANCE:
@@ -106,6 +109,7 @@ def open_review(
             "trigger": trigger,
             "controls": len(q.controls),
             "auto_answered": auto_count,
+            "attested": attested_count,
             "suggested": suggested_count,
         },
         request_ip=request_ip,

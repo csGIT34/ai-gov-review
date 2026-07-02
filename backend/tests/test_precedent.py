@@ -77,19 +77,22 @@ def test_fasttrack_same_terms_carries_judgment_answers(client):
     assert p["precedent"]["review_id"] == rid1
     assert p["model_terms"]["id"] == "anthropic-commercial-tos"
     assert p["precedent"]["terms"]["id"] == "anthropic-commercial-tos"
-    # 10 suggested + 5 manual = 15 judgment controls; 8 auto stay fresh.
-    assert p["carryable_count"] == 15
+    # 6 suggested + 5 manual = 11 judgment controls; 8 auto + 4 attested
+    # (documented anthropic/gcp platform commitments) stay fresh.
+    assert p["carryable_count"] == 11
 
     res = client.post(f"{API}/reviews/{rid2}/adopt-precedent", headers=REVIEWER)
     assert res.status_code == 200, res.text
-    assert res.json()["carried_count"] == 15
+    assert res.json()["carried_count"] == 11
     assert res.json()["precedent_review_id"] == rid1
 
     controls = _controls(client, rid2)
     carried = [c for c in controls if c["answer_source"] == "carried"]
     auto = [c for c in controls if c["answer_source"] == "auto"]
-    assert len(carried) == 15
-    assert len(auto) == 8  # cloud facts untouched by adoption
+    attested = [c for c in controls if c["answer_source"] == "attested"]
+    assert len(carried) == 11
+    assert len(auto) == 8       # cloud facts untouched by adoption
+    assert len(attested) == 4   # platform attestations untouched by adoption
     assert all(c["answer"] == "yes" for c in carried)
 
     review = client.get(f"{API}/reviews/{rid2}", headers=REVIEWER).json()
@@ -222,7 +225,7 @@ def test_adoption_is_audited_and_decision_references_precedent(client):
     adopted = [e for e in trail if e["action"] == "review_precedent_adopted"]
     assert len(adopted) == 1
     assert adopted[0]["after"]["precedent_review_id"] == rid1
-    assert adopted[0]["after"]["carried_count"] == 15
+    assert adopted[0]["after"]["carried_count"] == 11
 
     client.post(f"{API}/reviews/{rid2}/submit", headers=REVIEWER)
     _approve(client, rid2, 1)

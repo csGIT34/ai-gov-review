@@ -98,6 +98,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .badge.src-suggested { background: #3a2f10; border-color: var(--t2); color: #ffe08a; }
 .badge.src-human { background: #10233a; border-color: var(--accent); color: #bcd2ff; }
 .badge.src-carried { background: #2a1a3a; border-color: #9b59b6; color: #d9b8f5; }
+.badge.src-attested { background: #0e2a24; border-color: #2ec4a5; color: #a9ecd9; }
 .badge.src-manual { color: var(--muted); }
 
 .precedent { border: 1px solid var(--t1); background: #12331f; color: #d9f2e2; }

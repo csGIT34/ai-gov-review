@@ -76,6 +76,7 @@ class ModelStatus(str, Enum):
 
 class AnswerSource(str, Enum):
     AUTO = "auto"  # deterministic fact from the cloud API — accepted
+    ATTESTED = "attested"  # documented platform/vendor commitment (cited) — accepted
     SUGGESTED = "suggested"  # from provider docs — needs human confirmation
     HUMAN = "human"  # set or confirmed by a reviewer
     CARRIED = "carried"  # adopted from an approved precedent review (same vendor + terms)

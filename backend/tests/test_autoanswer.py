@@ -101,14 +101,23 @@ def test_review_opens_prefilled(client):
     rid = _open_gpt4o(client)
     controls = client.get(f"{API}/reviews/{rid}/controls", headers=REVIEWER).json()
     auto = [c for c in controls if c["answer_source"] == "auto"]
+    attested = [c for c in controls if c["answer_source"] == "attested"]
     suggested = [c for c in controls if c["answer_source"] == "suggested"]
     manual = [c for c in controls if c["answer_source"] is None]
     assert len(auto) == 8
-    assert len(suggested) == 10
+    # openai-on-azure has documented platform commitments for data handling,
+    # IP indemnity, red-teaming and compliance attestations.
+    assert sorted(c["control_key"] for c in attested) == [
+        "data_handling", "ip_licensing", "provider_slas", "safety_redteam",
+    ]
+    assert len(suggested) == 6
     assert len(manual) == 5
     # auto answers carry a rationale; docs carry evidence links.
     assert all(c["auto_rationale"] for c in auto)
     assert any(c["evidence_url"] for c in suggested)
+    # every attested answer cites its document.
+    assert all(c["evidence_url"] for c in attested)
+    assert all(c["answer"] == "yes" for c in attested)
     # manual controls carry guidance but no answer, and each is notated with its NIST control.
     assert all(c["answer"] is None for c in manual)
     assert all(c["auto_rationale"] for c in manual)  # guidance note
@@ -134,7 +143,7 @@ def test_submit_blocked_until_confirmed_and_manual_answered(client):
     assert blocked.status_code == 422
     details = blocked.json()["details"]
     assert len(details["unanswered"]) == 5          # the manual controls
-    assert len(details["needs_confirmation"]) == 10  # the suggested controls
+    assert len(details["needs_confirmation"]) == 6  # suggested controls (attested need none)
 
 
 def test_confirm_as_is_then_submit_flags_infosec(client):

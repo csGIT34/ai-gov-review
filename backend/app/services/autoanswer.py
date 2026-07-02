@@ -1,9 +1,11 @@
 """Auto-answer engine.
 
 Given a model's cloud `facts`, pre-answers the machine-answerable controls so the
-reviewer only handles judgment calls. Two tiers:
+reviewer only handles judgment calls. Three tiers:
 
   * fact collectors  -> answer_source="auto"      (deterministic; accepted as-is)
+  * attestations      -> answer_source="attested"  (documented platform/vendor
+    commitment with a citation — see services.attestations; accepted as-is)
   * doc collectors    -> answer_source="suggested" (needs human confirmation)
 
 Real Azure/GCP drivers (M5/M6) populate the same `facts` shape, so this engine is
@@ -95,6 +97,10 @@ def _auto(answer: str, rationale: str, url: str | None = None) -> AutoResult:
 
 def _suggest(answer: str, rationale: str, url: str | None) -> AutoResult:
     return AutoResult(answer, "suggested", "medium", rationale, url)
+
+
+def _attested(answer: str, rationale: str, url: str) -> AutoResult:
+    return AutoResult(answer, "attested", "high", rationale, url)
 
 
 # --- fact collectors (deterministic) ------------------------------------------
@@ -359,4 +365,10 @@ def collect(
     # replace the posture answers with pre-deployment suggestions.
     if facts.get("deployment_status") == "catalog":
         out.update(_catalog_overrides(facts, docs, policy, cloud))
+    # Documented platform/vendor commitments upgrade their controls from
+    # "confirm this doc" to an attested answer citing the doc.
+    from app.services.attestations import lookup as attestation_lookup
+
+    for key, att in attestation_lookup(cloud, vendor).items():
+        out[key] = _attested(att.answer, att.rationale, att.evidence_url)
     return out
