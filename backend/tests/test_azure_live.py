@@ -18,7 +18,7 @@ import pytest
 from app.discovery.azure_live import ARM, AzureLiveDriver
 from app.services.errors import ValidationError
 
-SUB = "60d84843-f38e-453d-bf20-34b8b0909860"
+SUB = "11111111-2222-3333-4444-555555555555"  # synthetic test subscription
 _API = "2024-10-01"
 _DIAG_API = "2021-05-01-preview"
 
