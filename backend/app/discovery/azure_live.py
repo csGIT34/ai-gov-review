@@ -33,6 +33,7 @@ import os
 import re
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
 import httpx
@@ -221,22 +222,46 @@ class AzureLiveDriver(DiscoveryDriver):
             f"{ARM}/subscriptions/{sub}/providers/Microsoft.CognitiveServices/accounts"
             f"?api-version={_API_ACCOUNTS}"
         )
+        model_accts = [a for a in accounts if a.get("kind") in _MODEL_KINDS]
+
+        # Per-account details and per-region catalogs are independent ARM GETs —
+        # fetch them concurrently. Serially a cold inventory is 7+ round-trips
+        # (several seconds) and the review dropdowns feel broken.
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            diag_futs = {
+                a["id"]: pool.submit(
+                    self._get_paged,
+                    f"{ARM}{a['id']}/providers/Microsoft.Insights/diagnosticSettings"
+                    f"?api-version={_API_DIAG}",
+                )
+                for a in model_accts
+            }
+            dep_futs = {
+                a["id"]: pool.submit(
+                    self._get_paged, f"{ARM}{a['id']}/deployments?api-version={_API_ACCOUNTS}"
+                )
+                for a in model_accts
+            }
+            cat_futs = {
+                r: pool.submit(
+                    self._get_paged,
+                    f"{ARM}/subscriptions/{sub}/providers/Microsoft.CognitiveServices"
+                    f"/locations/{r}/models?api-version={_API_ACCOUNTS}",
+                )
+                for r in catalog_regions
+            }
+            deployments_by_acct = {aid: f.result() for aid, f in dep_futs.items()}
+            diag_by_acct = {aid: f.result() for aid, f in diag_futs.items()}
+            catalog_by_region = {r: f.result() for r, f in cat_futs.items()}
+
         # (vendor, model_name, model_version) -> observations across the footprint
         groups: dict[tuple, list[dict]] = defaultdict(list)
 
-        for acct in accounts:
-            if acct.get("kind") not in _MODEL_KINDS:
-                continue
+        for acct in model_accts:
             acct_id = acct["id"]
             props = acct.get("properties") or {}
-            has_diag = _has_enabled_log_sink(
-                self._get_paged(
-                    f"{ARM}{acct_id}/providers/Microsoft.Insights/diagnosticSettings"
-                    f"?api-version={_API_DIAG}"
-                )
-            )
-            deployments = self._get_paged(f"{ARM}{acct_id}/deployments?api-version={_API_ACCOUNTS}")
-            for dep in deployments:
+            has_diag = _has_enabled_log_sink(diag_by_acct[acct_id])
+            for dep in deployments_by_acct[acct_id]:
                 dprops = dep.get("properties") or {}
                 model = dprops.get("model") or {}
                 name = model.get("name")
@@ -264,23 +289,19 @@ class AzureLiveDriver(DiscoveryDriver):
             self._merge(sub, vendor, name, version, obs)
             for (vendor, name, version), obs in groups.items()
         ]
-        models.extend(self._catalog_models(sub, catalog_regions, deployed=set(groups)))
+        models.extend(self._catalog_models(sub, catalog_by_region, deployed=set(groups)))
         return sorted(models, key=lambda m: (m.vendor, m.model_name, m.model_version or ""))
 
     def _catalog_models(
-        self, sub: str, regions: tuple[str, ...], deployed: set[tuple]
+        self, sub: str, catalog_by_region: dict[str, list[dict]], deployed: set[tuple]
     ) -> list[DiscoveredModel]:
         """Models Azure OFFERS in the given regions but that have no deployment in
         the subscription — reviewable before any resource is created (zero cost,
         Reader role only). A deployed (vendor, name, version) always wins: it has
         real posture facts."""
         catalog: dict[tuple, dict] = {}
-        for region in regions:
-            items = self._get_paged(
-                f"{ARM}/subscriptions/{sub}/providers/Microsoft.CognitiveServices"
-                f"/locations/{region}/models?api-version={_API_ACCOUNTS}"
-            )
-            for item in items:
+        for region in sorted(catalog_by_region):
+            for item in catalog_by_region[region]:
                 if item.get("kind") not in _MODEL_KINDS:
                     continue
                 model = item.get("model") or {}

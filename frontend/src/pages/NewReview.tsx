@@ -13,26 +13,40 @@ export default function NewReview() {
   const [error, setError] = useState<string | null>(null);
   const [dupId, setDupId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loadingVendors, setLoadingVendors] = useState(false);
+  const [loadingModels, setLoadingModels] = useState(false);
 
   useEffect(() => {
     api.get<Source[]>("/discovery/sources").then(setSources).catch((e) => setError(e.message));
   }, []);
 
-  // Cloud -> vendors
+  // Cloud -> vendors. A cold cloud query can take several seconds; guard
+  // against a stale response landing after the selection changed.
   useEffect(() => {
-    setVendors([]); setVendor(""); setModels([]); setPick("");
+    setVendors([]); setVendor(""); setModels([]); setPick(""); setError(null);
     if (!sourceId) return;
-    api.get<string[]>(`/discovery/sources/${sourceId}/vendors`).then(setVendors).catch((e) => setError(e.message));
+    let stale = false;
+    setLoadingVendors(true);
+    api
+      .get<string[]>(`/discovery/sources/${sourceId}/vendors`)
+      .then((v) => { if (!stale) setVendors(v); })
+      .catch((e) => { if (!stale) setError(e.message); })
+      .finally(() => { if (!stale) setLoadingVendors(false); });
+    return () => { stale = true; };
   }, [sourceId]);
 
   // Vendor -> models
   useEffect(() => {
     setModels([]); setPick("");
     if (!sourceId || !vendor) return;
+    let stale = false;
+    setLoadingModels(true);
     api
       .get<DiscoveredModel[]>(`/discovery/sources/${sourceId}/vendors/${vendor}/models`)
-      .then(setModels)
-      .catch((e) => setError(e.message));
+      .then((m) => { if (!stale) setModels(m); })
+      .catch((e) => { if (!stale) setError(e.message); })
+      .finally(() => { if (!stale) setLoadingModels(false); });
+    return () => { stale = true; };
   }, [vendor]);
 
   async function start() {
@@ -82,8 +96,8 @@ export default function NewReview() {
         {sourceId && (
           <>
             <label>Model vendor</label>
-            <select value={vendor} onChange={(e) => setVendor(e.target.value)}>
-              <option value="">— select vendor —</option>
+            <select value={vendor} disabled={loadingVendors} onChange={(e) => setVendor(e.target.value)}>
+              <option value="">{loadingVendors ? "Loading vendors from the cloud…" : "— select vendor —"}</option>
               {vendors.map((v) => (
                 <option key={v} value={v}>{v}</option>
               ))}
@@ -94,10 +108,12 @@ export default function NewReview() {
         {vendor && (
           <>
             <label>Model</label>
-            <select value={pick} onChange={(e) => setPick(e.target.value)}>
-              <option value="">— select model —</option>
+            <select value={pick} disabled={loadingModels} onChange={(e) => setPick(e.target.value)}>
+              <option value="">{loadingModels ? "Loading models from the cloud…" : "— select model —"}</option>
               {models.map((m, i) => (
-                <option key={m.resource_id} value={i}>{m.label}</option>
+                // resource_id alone is NOT unique: catalog models list one entry
+                // per (name, version) under the same logical resource id.
+                <option key={`${m.resource_id}:${m.model_version ?? i}`} value={i}>{m.label}</option>
               ))}
             </select>
           </>
