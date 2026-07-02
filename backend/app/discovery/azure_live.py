@@ -92,6 +92,14 @@ _VENDOR_TERMS: dict[str, dict] = {
         "label": "Mistral AI Terms of Service",
         "url": "https://mistral.ai/terms/",
     },
+    # Publisher terms are cloud-agnostic: Claude on Azure AI Foundry is governed
+    # by the same Anthropic commercial terms as Claude on Vertex, so the SAME
+    # terms id lets a precedent minted on one cloud fast-track the other.
+    "anthropic": {
+        "id": "anthropic-commercial-tos",
+        "label": "Anthropic Commercial Terms of Service",
+        "url": "https://www.anthropic.com/legal/commercial-terms",
+    },
 }
 
 

@@ -142,3 +142,55 @@ def test_review_freezes_point_in_time_csp_snapshot(client):
     assert snap["cloud_facts"]["regions"]           # the cloud posture seen at open
     att = snap["attestations"]
     assert "data_handling" in att and att["data_handling"]["evidence_url"].startswith("https://")
+
+
+def test_cross_cloud_precedent_same_publisher_terms(client):
+    """Publisher terms are cloud-agnostic: a precedent minted from an approved
+    Claude review on GCP must fast-track a Claude model served from the Azure
+    catalog (same anthropic-commercial-tos)."""
+    import os
+    import app.config as config
+    from app.discovery.azure_live import ARM, AzureLiveDriver
+    from app.discovery.base import register_driver
+    from app.discovery.stub import StubAzureDriver
+    from tests.test_azure_live import SUB, _API, _cat, _catalog_urls
+
+    rid1 = _approved_precedent(client, "gcp", "anthropic", "claude-opus-4-8")
+
+    # Live-shaped Azure driver: empty subscription, Claude offered in the catalog.
+    responses = {
+        f"{ARM}/subscriptions/{SUB}/providers/Microsoft.CognitiveServices"
+        f"/accounts?api-version={_API}": {"value": []},
+        **_catalog_urls(SUB, {
+            "eastus": [_cat("claude-opus-4-7", "1", fmt="Anthropic", kind="AIServices")],
+        }),
+    }
+    driver = AzureLiveDriver(fetch=lambda url: responses[url])
+    register_driver(driver)
+    try:
+        os.environ["AZURE_SUBSCRIPTION_ID"] = SUB
+        config.get_settings.cache_clear()
+        sources = client.get(f"{API}/discovery/sources", headers=REVIEWER).json()
+        sid = next(s["id"] for s in sources if s["cloud"] == "azure")
+        m = next(x for x in client.get(
+            f"{API}/discovery/sources/{sid}/vendors/anthropic/models", headers=REVIEWER
+        ).json() if x["model_name"] == "claude-opus-4-7")
+        assert m["provisioning_state"] == "NotDeployed"  # catalog-only, zero resources
+
+        r = client.post(f"{API}/reviews", headers=REVIEWER, json={
+            "source_id": sid, "vendor": "anthropic",
+            "resource_id": m["resource_id"], "model_version": m["model_version"],
+        })
+        assert r.status_code == 201, r.text
+        rid2 = r.json()["id"]
+
+        a = client.get(f"{API}/reviews/{rid2}/precedent", headers=REVIEWER).json()
+        assert a["available"] is True, a["reasons"]
+        assert a["model_terms"]["id"] == "anthropic-commercial-tos"
+        assert a["precedent"]["source_review_id"] == rid1
+        assert a["precedent"]["cloud"] == "gcp"  # precedent minted on the other cloud
+        assert client.post(f"{API}/reviews/{rid2}/adopt-precedent", headers=REVIEWER).status_code == 200
+    finally:
+        register_driver(StubAzureDriver())
+        os.environ.pop("AZURE_SUBSCRIPTION_ID", None)
+        config.get_settings.cache_clear()

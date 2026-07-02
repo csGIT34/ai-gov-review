@@ -82,6 +82,23 @@ _REGISTRY: dict[tuple[str, str], dict[str, Attestation]] = {
             "https://learn.microsoft.com/legal/cognitive-services/openai/transparency-note",
         ),
     },
+    # Anthropic's publisher commitments are cloud-agnostic — the same commercial
+    # terms and system cards govern Claude on Azure AI Foundry and on Vertex.
+    ("azure", "anthropic"): {
+        "ip_licensing": Attestation(
+            "yes",
+            "Anthropic's commercial terms include copyright indemnification for "
+            "paid-tier model output.",
+            "https://www.anthropic.com/legal/commercial-terms",
+        ),
+        "safety_redteam": Attestation(
+            "yes",
+            "Anthropic publishes model system cards and a Responsible Scaling "
+            "Policy documenting red-team evaluation including CBRN, cyber and "
+            "autonomy risk categories.",
+            "https://www.anthropic.com/transparency",
+        ),
+    },
     ("azure", "microsoft"): {
         "ip_licensing": Attestation(
             "yes",
