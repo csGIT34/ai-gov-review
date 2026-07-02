@@ -84,6 +84,24 @@ Attested answers are **not carried** by the precedent fast-track (they're
 recomputed fresh, like auto facts) and a reviewer can always override one — the
 override re-owns the answer as `human`.
 
+### Two answering teams
+
+Every control also declares **who answers it** (`owner` in the questionnaire),
+and the review page splits into two labeled sections with per-section progress
+chips:
+
+- **Model & platform** (14 controls) — inherent to the model and the cloud
+  platform hosting it: residency, network/auth, encryption, filters,
+  monitoring, version pinning, data handling, licensing, certifications,
+  provenance, model card. Answerable by the **infra / governance team** — and
+  since every auto + attested answer lands here, this half largely settles
+  itself.
+- **Your use case** (9 controls) — depends on how *this* deployment will be
+  used: intended use, evaluation for the task, bias for affected groups,
+  prompt-injection surface, explainability adequacy, human oversight, incident
+  runbook, impact assessment, environmental. Answered by the **team consuming
+  the model**.
+
 ### The 8 auto controls read these cloud facts
 
 Each is a deterministic check against a property of the deployed resource:
@@ -198,6 +216,21 @@ encryption, filters, terms) and the **platform attestation documents** used
 `Model.facts` is overwritten on every re-discovery and the attestation registry
 is curated code that evolves; the snapshot documents exactly what THIS review
 saw, so the evidence behind a decision never drifts after the fact.
+
+## Deleting reviews
+
+`DELETE /api/v1/reviews/{id}` (✕ on the dashboard rows, or the "Danger zone"
+card on the review page — two-click confirm):
+
+- **Open (undecided) reviews** — any reviewer may delete; they're clutter, not
+  records. The model is freed for a fresh review immediately.
+- **Decided reviews** — admin only, with a **mandatory reason**; they're signed
+  governance records.
+- Deleting a review **never breaks the fast-track**: the precedent it minted is
+  standalone and just detaches its source link.
+- The deletion itself is audited (`review_deleted`, with the state and reason),
+  and the review's existing hash-chained audit entries remain — the append-only
+  chain is untouched. `Model.current_review_id` is repointed so nothing dangles.
 
 ## Stack
 
