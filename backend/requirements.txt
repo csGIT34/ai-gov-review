@@ -23,6 +23,7 @@ argon2-cffi==25.1.0
 pytest==9.1.1
 httpx==0.28.1
 
-# Cloud discovery (M5). Azure uses direct ARM REST GETs over httpx; only the
-# credential chain needs an SDK. GCP (M6) will add google-auth.
+# Cloud discovery (M5/M6). Both clouds use direct REST GETs over httpx; only
+# the credential chains need SDKs (lazily imported — stub mode needs neither).
 azure-identity==1.25.3
+google-auth==2.43.0

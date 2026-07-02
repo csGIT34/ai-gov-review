@@ -25,10 +25,12 @@ class Settings(BaseSettings):
     framework_id: str = "nist-ai-rmf-1.0+genai-600-1"
 
     # Discovery drivers. "stub" = deterministic demo data; "live" = real cloud
-    # (read-only). AZURE_SUBSCRIPTION_ID is the fallback subscription when the
-    # discovery source's scope isn't a subscription GUID.
+    # (read-only). The *_ID settings are fallbacks when the discovery source's
+    # scope isn't a subscription GUID / project id.
     azure_discovery: str = "stub"
     azure_subscription_id: str | None = None
+    gcp_discovery: str = "stub"
+    gcp_project_id: str | None = None
 
     @property
     def cors_origins(self) -> list[str]:

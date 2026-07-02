@@ -24,8 +24,8 @@ an **immutable audit trail**.
 - **Pull-based discovery.** No background polling. When a reviewer starts a review,
   cascading dropdowns (cloud source → vendor → model) are populated on demand from
   the cloud APIs (cached). Read-only — the app never writes to any cloud.
-  Azure discovery can run **live** (see [Live Azure discovery](#live-azure-discovery-m5));
-  GCP is stubbed until M6.
+  Both clouds can run **live** (see [Live Azure discovery](#live-azure-discovery-m5)
+  and [Live GCP discovery](#live-gcp-discovery-m6)); stubs are the default.
 - **Auto-answer.** When the review opens, the engine pre-answers every control it can
   from the model's cloud facts, so the reviewer only handles judgment calls. See
   [How auto-answer works](#how-auto-answer-works) below.
@@ -251,7 +251,7 @@ docker compose up --build
 ## Live Azure discovery (M5)
 
 Set two env vars on the API and the Azure dropdowns read your real subscription
-instead of the stub (GCP stays stubbed until M6):
+instead of the stub:
 
 ```bash
 AZURE_DISCOVERY=live
@@ -297,6 +297,43 @@ the real facts, and the auto-answers recompute from measured posture.
    (expires in ~1h; restart with a fresh one — never bake it into an image).
 2. `DefaultAzureCredential` — `az login` when running the backend locally;
    **managed identity / workload identity** in production. No secrets in git or images.
+
+## Live GCP discovery (M6)
+
+Same design as Azure, against Vertex AI:
+
+```bash
+GCP_DISCOVERY=live
+GCP_PROJECT_ID=<project id>
+```
+
+What it reads (strictly **read-only** — REST GETs against the regional
+`aiplatform.googleapis.com`; **roles/aiplatform.viewer** suffices):
+
+- **Catalog, zero resources needed:** the Vertex AI **Model Garden** publisher
+  listings (`publishers/{google,anthropic,meta,mistralai,ai21,cohere}/models`)
+  in your approved regions — so reviews start before anything is deployed,
+  exactly like the Azure catalog. Catalog entries show as **"not deployed"**
+  with `launchStage` (GA/Preview) as a lifecycle fact.
+- **Deployed:** Vertex AI **endpoints** and uploaded/tuned **models** in the
+  project. Per-endpoint posture merges **fail-closed** across the footprint —
+  CMEK (`encryptionSpec.kmsKeyName`) and private networking (VPC network /
+  Private Service Connect); one public endpoint marks the whole model public.
+  Tuned models (`baseModelSource`) are flagged fine-tuned; deployments pin
+  their model version (NoAutoUpgrade).
+- **Terms** reuse the same identities as Azure and the stub where publisher
+  terms are cloud-agnostic (`anthropic-commercial-tos`,
+  `llama-3.3-community-license`, `mistral-ai-terms`), so a precedent minted on
+  one cloud fast-tracks the other. Google models are under
+  `gcp-service-terms`; publishers without a known mapping fail closed.
+
+**Credentials (keyless, in order):**
+
+1. `GCP_ACCESS_TOKEN` — a short-lived bearer for containerized dev:
+   `-e GCP_ACCESS_TOKEN="$(gcloud auth print-access-token)"`
+   (expires in ~1h; restart with a fresh one — never bake it into an image).
+2. Application Default Credentials — `gcloud auth application-default login`
+   locally; **attached service account / workload identity** in production.
 
 ## Quickstart (local backend, no Docker)
 

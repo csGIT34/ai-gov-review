@@ -21,9 +21,25 @@ _DEFAULT_SOURCES = [
 
 
 def seed_default_sources(db: Session) -> None:
-    live_azure = _ensure_live_azure_source(db)
+    s = get_settings()
+    live = {
+        "azure": _ensure_live_source(
+            db, cloud="azure",
+            is_live=s.azure_discovery.lower() == "live",
+            scope=s.azure_subscription_id,
+            live_name=f"Azure ({(s.azure_subscription_id or '')[:8]}…)",
+            demo_name="Azure (demo)",
+        ),
+        "gcp": _ensure_live_source(
+            db, cloud="gcp",
+            is_live=s.gcp_discovery.lower() == "live",
+            scope=s.gcp_project_id,
+            live_name=f"GCP ({s.gcp_project_id})",
+            demo_name="GCP (demo)",
+        ),
+    }
     for spec in _DEFAULT_SOURCES:
-        if spec["cloud"] == "azure" and live_azure:
+        if live.get(spec["cloud"]):
             continue  # the live source replaces the demo row; don't re-seed it
         exists = db.execute(
             select(DiscoverySource).where(
@@ -36,34 +52,30 @@ def seed_default_sources(db: Session) -> None:
     db.commit()
 
 
-def _ensure_live_azure_source(db: Session) -> bool:
-    """When live Azure discovery is on, convert the seeded demo source into the
-    real-subscription source (or create it on a fresh DB). Only rows this app
+def _ensure_live_source(
+    db: Session, *, cloud: str, is_live: bool, scope: str | None,
+    live_name: str, demo_name: str
+) -> bool:
+    """When live discovery is on for a cloud, convert the seeded demo source
+    into the real-scope source (or create it on a fresh DB). Only rows this app
     seeded/generated are touched — user-created sources are left alone.
-    Returns True when live mode manages the azure source."""
-    s = get_settings()
-    if s.azure_discovery.lower() != "live" or not s.azure_subscription_id:
+    Returns True when live mode manages that cloud's source."""
+    if not is_live or not scope:
         return False
-    live_name = f"Azure ({s.azure_subscription_id[:8]}…)"
     rows = list(
         db.execute(
-            select(DiscoverySource).where(DiscoverySource.cloud == "azure")
+            select(DiscoverySource).where(DiscoverySource.cloud == cloud)
         ).scalars()
     )
     converted = False
     for src in rows:
-        if src.display_name in ("Azure (demo)", live_name):
-            src.scope = s.azure_subscription_id
+        if src.display_name in (demo_name, live_name):
+            src.scope = scope
             src.display_name = live_name
             converted = True
-    if not converted and not any(src.scope == s.azure_subscription_id for src in rows):
+    if not converted and not any(src.scope == scope for src in rows):
         db.add(
-            DiscoverySource(
-                cloud="azure",
-                display_name=live_name,
-                scope=s.azure_subscription_id,
-                enabled=True,
-            )
+            DiscoverySource(cloud=cloud, display_name=live_name, scope=scope, enabled=True)
         )
     db.commit()
     return True

@@ -118,8 +118,8 @@ class TTLCache:
 discovery_cache = TTLCache(ttl_seconds=120.0)
 
 
-# Register drivers. Stubs are the default; AZURE_DISCOVERY=live swaps in the
-# real (read-only) Azure driver. GCP stays stubbed until M6.
+# Register drivers. Stubs are the default; AZURE_DISCOVERY=live / GCP_DISCOVERY=live
+# swap in the real (read-only) drivers per cloud.
 from app.config import get_settings  # noqa: E402
 from app.discovery.stub import StubAzureDriver, StubGcpDriver  # noqa: E402
 
@@ -130,3 +130,8 @@ if get_settings().azure_discovery.lower() == "live":
     from app.discovery.azure_live import AzureLiveDriver  # noqa: E402
 
     register_driver(AzureLiveDriver())  # replaces the azure stub
+
+if get_settings().gcp_discovery.lower() == "live":
+    from app.discovery.gcp_live import GcpLiveDriver  # noqa: E402
+
+    register_driver(GcpLiveDriver())  # replaces the gcp stub

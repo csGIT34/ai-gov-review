@@ -31,6 +31,11 @@ services:
       AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
       # Short-lived dev bearer (az account get-access-token); managed identity in prod.
       AZURE_ACCESS_TOKEN: ${AZURE_ACCESS_TOKEN:-}
+      # Live GCP discovery (M6) — read-only; aiplatform.viewer suffices. See README.
+      GCP_DISCOVERY: ${GCP_DISCOVERY:-stub}
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
+      # Short-lived dev bearer (gcloud auth print-access-token); workload identity in prod.
+      GCP_ACCESS_TOKEN: ${GCP_ACCESS_TOKEN:-}
     ports:
       - "8000:8000"   # Swagger at http://localhost:8000/docs
     networks: [backend]
