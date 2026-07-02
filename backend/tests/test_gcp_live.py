@@ -245,3 +245,23 @@ def test_gcp_catalog_review_through_api(client, driver):
         register_driver(StubGcpDriver())
         os.environ.pop("GCP_PROJECT_ID", None)
         config.get_settings.cache_clear()
+
+
+def test_default_fetch_sends_quota_project_header(monkeypatch):
+    """User credentials require x-goog-user-project on aiplatform calls —
+    without it Google returns 403 even with a valid token."""
+    import httpx as _httpx
+
+    monkeypatch.setenv("GCP_ACCESS_TOKEN", "tok")
+    seen = {}
+
+    def fake_get(url, headers=None, timeout=None):
+        seen.update(headers or {})
+        return _httpx.Response(200, json={"publisherModels": []},
+                               request=_httpx.Request("GET", url))
+
+    monkeypatch.setattr(_httpx, "get", fake_get)
+    d = GcpLiveDriver()
+    d.list_vendors(PROJECT)
+    assert seen.get("x-goog-user-project") == PROJECT
+    assert seen.get("Authorization") == "Bearer tok"

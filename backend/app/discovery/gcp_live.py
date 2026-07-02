@@ -131,14 +131,19 @@ class GcpLiveDriver(DiscoveryDriver):
         self._tokens = _TokenSource()
         self._inventory_ttl = inventory_ttl
         self._inv_cache: dict[tuple, tuple[float, list[DiscoveredModel]]] = {}
+        # Quota/billing project for the x-goog-user-project header. User
+        # credentials (gcloud login / dev bearer) REQUIRE it for aiplatform;
+        # set from the resolved scope before each inventory build.
+        self._quota_project: str | None = None
 
     # -- transport --
 
     def _default_fetch(self, url: str) -> dict:
+        headers = {"Authorization": f"Bearer {self._tokens.bearer()}"}
+        if self._quota_project:
+            headers["x-goog-user-project"] = self._quota_project
         try:
-            resp = httpx.get(
-                url, headers={"Authorization": f"Bearer {self._tokens.bearer()}"}, timeout=30.0
-            )
+            resp = httpx.get(url, headers=headers, timeout=30.0)
             resp.raise_for_status()
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
@@ -218,6 +223,7 @@ class GcpLiveDriver(DiscoveryDriver):
         return models
 
     def _build_inventory(self, project: str, regions: tuple[str, ...]) -> list[DiscoveredModel]:
+        self._quota_project = project
         # All regional queries are independent GETs — fetch concurrently
         # (catalog: regions × publishers; deployed: endpoints + models per region).
         with ThreadPoolExecutor(max_workers=8) as pool:
