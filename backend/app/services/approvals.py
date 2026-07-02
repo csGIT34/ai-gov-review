@@ -134,6 +134,9 @@ def decide(
             "risk_score_id": str(score.id),
             "override": overridden_tier is not None,
             "overridden_tier": overridden_tier,
+            "precedent_review_id": (
+                str(review.precedent_review_id) if review.precedent_review_id else None
+            ),
         },
         request_ip=request_ip,
     )

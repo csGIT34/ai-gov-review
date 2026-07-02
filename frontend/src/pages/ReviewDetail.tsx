@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { ApiError, Control, Decision, Me, ReviewDetail as RD, RiskScore, api } from "../api";
+import { Link, useParams } from "react-router-dom";
+import { AdoptResult, ApiError, Control, Decision, Me, Precedent, ReviewDetail as RD, RiskScore, api } from "../api";
 import {
   BadgeLegend,
   ScoreLegend,
@@ -22,6 +22,7 @@ export default function ReviewDetail() {
   const { id } = useParams();
   const [d, setD] = useState<RD | null>(null);
   const [me, setMe] = useState<Me | null>(null);
+  const [prec, setPrec] = useState<Precedent | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -33,18 +34,48 @@ export default function ReviewDetail() {
   const [overrideReason, setOverrideReason] = useState("");
   const [iAmOwner, setIAmOwner] = useState(false);
 
-  async function reload() {
+  // isStale guards the fire-and-forget fetches: navigating to another review
+  // re-runs the [id] effect without unmounting, so a slow response for the OLD
+  // id must not land on the NEW review's state.
+  async function reload(isStale: () => boolean = () => false) {
     const detail = await api.get<RD>(`/reviews/${id}`);
+    if (isStale()) return;
     setD(detail);
+    api.get<Precedent>(`/reviews/${id}/precedent`)
+      .then((p) => { if (!isStale()) setPrec(p); })
+      .catch(() => {});
     if (TERMINAL.includes(detail.state)) {
-      api.get<Decision>(`/reviews/${id}/decision`).then(setDecision).catch(() => {});
+      api.get<Decision>(`/reviews/${id}/decision`)
+        .then((dec) => { if (!isStale()) setDecision(dec); })
+        .catch(() => {});
     }
   }
   useEffect(() => {
-    setError(null);
-    reload().catch((e) => setError(e.message));
+    let stale = false;
+    setError(null); setMsg(null);
+    setD(null); setPrec(null); setDecision(null);
+    setJustification(""); setConditions(""); setOverrideReason(""); setIAmOwner(false);
+    reload(() => stale).catch((e) => { if (!stale) setError(e.message); });
     api.get<Me>("/me").then(setMe).catch(() => {});
+    return () => { stale = true; };
   }, [id]);
+
+  // Rubber-stamp helper: when a fast-tracked review reaches the approval gate,
+  // prefill the justification with the precedent reference (approver may edit).
+  // Must stay above the early returns below — hooks run on every render.
+  useEffect(() => {
+    if (d?.state === "scored" && d.precedent_review_id && prec?.precedent) {
+      const p = prec.precedent;
+      setJustification((j) =>
+        j ||
+        `Approved per precedent: ${p.model_name}${p.model_version ? ` v${p.model_version}` : ""} ` +
+        `(review ${p.review_id.slice(0, 8)}, ${p.decision_state.replace(/_/g, " ")}` +
+        `${p.tier ? `, Tier ${p.tier}` : ""}) under identical governing terms` +
+        `${p.terms?.label ? ` (${p.terms.label})` : ""}. ` +
+        `Cloud-fact controls were re-evaluated fresh for this model.`
+      );
+    }
+  }, [d?.state, d?.precedent_review_id, prec]);
 
   if (error && !d) return <div className="err">{error}</div>;
   if (!d) return <div className="muted">Loading…</div>;
@@ -88,6 +119,19 @@ export default function ReviewDetail() {
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function adoptPrecedent() {
+    setBusy(true); setError(null); setMsg(null);
+    try {
+      const res = await api.post<AdoptResult>(`/reviews/${id}/adopt-precedent`);
+      await reload();
+      setMsg(`Adopted ${res.carried_count} judgment answers from the precedent review. Cloud-fact checks stay computed fresh for this model — review the score and submit.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -140,10 +184,47 @@ export default function ReviewDetail() {
           {d.model.regions.length ? d.model.regions.join(", ") : "—"}
         </span>
         <span className="muted" style={{ fontSize: "0.75rem" }}>{d.model.resource_id}</span>
+        {d.precedent_review_id && (
+          <span>
+            <span className="badge src-carried">fast-tracked</span>{" "}
+            <Link to={`/reviews/${d.precedent_review_id}`}>precedent review ↗</Link>
+          </span>
+        )}
       </div>
 
       {error && <div className="err">{error}</div>}
       {msg && <div className="ok">{msg}</div>}
+
+      {editable && !d.precedent_review_id && prec?.available && prec.precedent && (
+        <div className="card precedent">
+          <h3>⚡ Fast-track available — same vendor, same terms</h3>
+          <div>
+            <strong>{prec.precedent.model_name}{prec.precedent.model_version ? ` v${prec.precedent.model_version}` : ""}</strong>{" "}
+            was {prec.precedent.decision_state.replace(/_/g, " ")}
+            {prec.precedent.tier ? <> at <strong>Tier {prec.precedent.tier}</strong></> : null}
+            {prec.precedent.decided_at ? ` on ${fmtDate(prec.precedent.decided_at)}` : ""} under the same
+            governing terms{prec.model_terms?.label ? <> (<em>{prec.model_terms.label}</em>)</> : null}.
+          </div>
+          <p className="why">
+            Adopting carries its <strong>{prec.carryable_count} judgment answers</strong> into this review
+            (marked <span className="badge src-carried">carried</span> — you can still override any of them).
+            The cloud-fact checks (residency, network, encryption, filters…) are <strong>always re-computed
+            fresh for this model</strong> and can still block approval.
+          </p>
+          <button disabled={busy} onClick={adoptPrecedent}>
+            Adopt precedent answers ({prec.carryable_count})
+          </button>
+        </div>
+      )}
+
+      {editable && !d.precedent_review_id && prec && !prec.available && prec.reasons.length > 0 && (
+        <div className="card precedent blocked">
+          <h3>Full review required — no usable precedent</h3>
+          {prec.reasons.map((r, i) => (
+            <p className="why" key={i}>{r}</p>
+          ))}
+        </div>
+      )}
 
       <div className="grid">
         <div>

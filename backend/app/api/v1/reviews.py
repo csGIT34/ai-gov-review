@@ -11,15 +11,20 @@ from app.api.deps import client_ip, db_session, get_current_user, require_review
 from app.models import ControlResponse, DiscoverySource, Model, Review, ReviewState, User
 from app.models.enums import DECISION_STATES
 from app.schemas import (
+    AdoptResultOut,
     AssignIn,
     ControlAnswerIn,
     ControlOut,
+    ModelTermsOut,
+    PrecedentOut,
+    PrecedentRefOut,
     ReviewCreate,
     ReviewDetailOut,
     ReviewOut,
     RiskScoreOut,
     SubmitResultOut,
 )
+from app.services import precedent as precedent_svc
 from app.services import review_workflow as wf
 from app.services.errors import ConflictError, NotFoundError
 from app.services.models import resolve_discovered, upsert_model
@@ -163,6 +168,64 @@ def answer_control(
     db.commit()
     db.refresh(cr)
     return cr
+
+
+def _precedent_out(db: Session, a: precedent_svc.Assessment) -> PrecedentOut:
+    ref = None
+    if a.precedent is not None and a.precedent_model is not None:
+        score = wf.current_score(db, a.precedent)
+        terms = precedent_svc.terms_of(a.precedent_model)
+        ref = PrecedentRefOut(
+            review_id=a.precedent.id,
+            model_id=a.precedent_model.id,
+            model_name=a.precedent_model.model_name,
+            model_version=a.precedent_model.model_version,
+            cloud=a.precedent_model.cloud,
+            decision_state=a.precedent.state,
+            decided_at=a.precedent.decided_at,
+            tier=score.tier if score else None,
+            score=score.overall_score if score else None,
+            terms=ModelTermsOut(**terms) if terms else None,
+        )
+    return PrecedentOut(
+        available=a.available,
+        reasons=a.reasons,
+        model_terms=ModelTermsOut(**a.model_terms) if a.model_terms else None,
+        precedent=ref,
+        carryable_keys=a.carryable_keys,
+        carryable_count=len(a.carryable_keys),
+    )
+
+
+@router.get("/{review_id}/precedent", response_model=PrecedentOut)
+def get_precedent(
+    review_id: uuid.UUID,
+    db: Session = Depends(db_session),
+    _: User = Depends(get_current_user),
+) -> PrecedentOut:
+    """Can this review fast-track from an approved precedent (and why/why not)?"""
+    review = wf.get_review(db, review_id)
+    return _precedent_out(db, precedent_svc.find_precedent(db, review))
+
+
+@router.post("/{review_id}/adopt-precedent", response_model=AdoptResultOut)
+def adopt_precedent(
+    review_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(db_session),
+    user: User = Depends(require_reviewer),
+) -> AdoptResultOut:
+    """Carry the precedent's judgment answers into this review (auto facts stay fresh)."""
+    review = wf.get_review(db, review_id)
+    assessment, carried = precedent_svc.adopt(
+        db, review=review, actor_id=user.id, request_ip=client_ip(request)
+    )
+    db.commit()
+    return AdoptResultOut(
+        precedent_review_id=assessment.precedent.id,
+        carried_keys=carried,
+        carried_count=len(carried),
+    )
 
 
 @router.post("/{review_id}/submit", response_model=SubmitResultOut)

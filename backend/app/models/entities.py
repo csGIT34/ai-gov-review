@@ -141,6 +141,12 @@ class Review(UUIDPKMixin, TimestampMixin, Base):
     # template edits never retroactively change what was signed off.
     snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
+    # Set when judgment answers were carried forward from an approved precedent
+    # review (same vendor + same governing terms) — the fast-track provenance.
+    precedent_review_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("reviews.id"), nullable=True
+    )
+
     model: Mapped["Model"] = relationship(back_populates="reviews")
     controls: Mapped[list["ControlResponse"]] = relationship(
         back_populates="review", cascade="all, delete-orphan"

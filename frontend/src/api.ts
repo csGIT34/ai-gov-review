@@ -178,6 +178,41 @@ export interface Review {
   opened_at: string;
   submitted_at: string | null;
   decided_at: string | null;
+  precedent_review_id: string | null;
+}
+
+export interface ModelTerms {
+  id: string | null;
+  label: string | null;
+  url: string | null;
+}
+
+export interface PrecedentRef {
+  review_id: string;
+  model_id: string;
+  model_name: string;
+  model_version: string | null;
+  cloud: string;
+  decision_state: string;
+  decided_at: string | null;
+  tier: number | null;
+  score: number | null;
+  terms: ModelTerms | null;
+}
+
+export interface Precedent {
+  available: boolean;
+  reasons: string[];
+  model_terms: ModelTerms | null;
+  precedent: PrecedentRef | null;
+  carryable_keys: string[];
+  carryable_count: number;
+}
+
+export interface AdoptResult {
+  precedent_review_id: string;
+  carried_keys: string[];
+  carried_count: number;
 }
 
 export interface ReviewDetail extends Review {

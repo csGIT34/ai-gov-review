@@ -118,6 +118,37 @@ applied in `backend/app/services/review_workflow.py::open_review`. The `facts` d
 supplied by the discovery driver — a **stub today**; the real Azure/GCP drivers (M5/M6)
 populate the same shape, so the engine is unchanged when discovery goes live.
 
+## Precedent fast-track ("rubber stamp")
+
+Most models from a vendor fall under the same approval process — the org-level
+judgment answers (procurement vetting, oversight process, incident runbook,
+doc-based confirmations) don't change between them. So once **one** model is fully
+reviewed and approved, later models can be fast-tracked:
+
+- **Match rule:** same **vendor** + same **governing terms** (`facts.terms.id` — the
+  marketplace agreement / publisher license on the resource) + an **approved**
+  precedent review + the same questionnaire version. All checks are enforced
+  server-side on adopt; the UI only reflects them.
+- **Adopt** carries the precedent's judgment answers into the new review, marked
+  `carried` (purple badge). One click, then submit → score → approve. The approval
+  justification is prefilled with the precedent reference.
+- **What never carries:** the 8 **auto** (cloud-fact) controls — residency,
+  network, encryption, filters, version pinning — are always recomputed from
+  *this* model's own facts. A model with a worse footprint still trips its own
+  gates (e.g. `o3-mini` fast-tracks its answers from `gpt-4o` but its
+  `brazilsouth` region still forces a residency KO → Tier 4).
+- **The caveat:** a model under **different terms** gets **no fast-track**, with
+  the reason shown. Example in the stub: `claude-fable-5` shares the Anthropic
+  commercial ToS with `claude-opus-4-8` (fast-track ok), but `claude-mythos-5`
+  is under a restricted-availability addendum → full review, explicitly explained.
+- **Provenance:** `review.precedent_review_id`, per-control `answer_source="carried"`,
+  a `review_precedent_adopted` audit entry, and the final decision's audit entry
+  references the precedent. Carried answers can still be overridden (they become
+  `human` again).
+
+Where it lives: `backend/app/services/precedent.py`,
+`GET/POST /api/v1/reviews/{id}/precedent|adopt-precedent`.
+
 ## Stack
 
 FastAPI · SQLAlchemy 2 · Alembic · Postgres 16 · React + Vite (TS) · Docker Compose.

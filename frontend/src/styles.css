@@ -97,7 +97,13 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .badge.src-auto { background: #12331f; border-color: var(--t1); color: #a6f0c2; }
 .badge.src-suggested { background: #3a2f10; border-color: var(--t2); color: #ffe08a; }
 .badge.src-human { background: #10233a; border-color: var(--accent); color: #bcd2ff; }
+.badge.src-carried { background: #2a1a3a; border-color: #9b59b6; color: #d9b8f5; }
 .badge.src-manual { color: var(--muted); }
+
+.precedent { border: 1px solid var(--t1); background: #12331f; color: #d9f2e2; }
+.precedent.blocked { border-color: var(--t2); background: #3a2f10; color: #f2e6c0; }
+.precedent .why { font-size: 0.85rem; margin: 0.3rem 0 0; }
+.precedent h3 { color: inherit; margin-top: 0; }
 
 .rationale { font-size: 0.8rem; color: var(--muted); margin-top: 0.4rem; }
 .rationale a { margin-left: 0.4rem; }

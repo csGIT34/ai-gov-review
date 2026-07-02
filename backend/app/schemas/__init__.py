@@ -256,6 +256,7 @@ class ReviewOut(ORMModel):
     opened_at: datetime
     submitted_at: datetime | None
     decided_at: datetime | None
+    precedent_review_id: uuid.UUID | None = None
 
 
 class ReviewDetailOut(ReviewOut):
@@ -267,6 +268,47 @@ class ReviewDetailOut(ReviewOut):
 class SubmitResultOut(Schema):
     review: ReviewOut
     score: RiskScoreOut
+
+
+# --- precedent fast-track --------------------------------------------------------
+
+class ModelTermsOut(Schema):
+    """Governing-terms identity read from the model's cloud facts."""
+
+    id: str | None = None
+    label: str | None = None
+    url: str | None = None
+
+
+class PrecedentRefOut(Schema):
+    """The approved review a fast-track would carry answers from."""
+
+    review_id: uuid.UUID
+    model_id: uuid.UUID
+    model_name: str
+    model_version: str | None
+    cloud: str
+    decision_state: str
+    decided_at: datetime | None
+    tier: int | None
+    score: float | None
+    terms: ModelTermsOut | None
+
+
+class PrecedentOut(Schema):
+    available: bool
+    # Human-readable explanations when the fast-track is blocked (empty if available).
+    reasons: list[str]
+    model_terms: ModelTermsOut | None
+    precedent: PrecedentRefOut | None
+    carryable_keys: list[str]
+    carryable_count: int
+
+
+class AdoptResultOut(Schema):
+    precedent_review_id: uuid.UUID
+    carried_keys: list[str]
+    carried_count: int
 
 
 # --- approvals -----------------------------------------------------------------

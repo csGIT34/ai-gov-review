@@ -53,6 +53,7 @@ const SOURCE_TITLE: Record<string, string> = {
   auto: "Answered automatically from an objective cloud fact — accepted as-is.",
   suggested: "Suggested from the provider's documentation — confirm or override before you can submit.",
   human: "Answered or confirmed by a reviewer.",
+  carried: "Carried forward from the approved precedent review (same vendor and governing terms). You may still override it.",
   manual: "No reliable cloud signal — a reviewer must answer this.",
 };
 
@@ -62,6 +63,7 @@ export function SourceBadge({ source }: { source: string | null }) {
   if (source === "auto") return <span className="badge src-auto" title={t}>✓ auto</span>;
   if (source === "suggested") return <span className="badge src-suggested" title={t}>confirm</span>;
   if (source === "human") return <span className="badge src-human" title={t}>reviewed</span>;
+  if (source === "carried") return <span className="badge src-carried" title={t}>carried</span>;
   return <span className="badge src-manual" title={t}>manual</span>;
 }
 
@@ -92,7 +94,7 @@ export function BadgeLegend() {
       <div className="legend-row"><span className="badge">GOVERN 1.1</span><span>The NIST AI RMF control this question maps to (its full statement is shown under the question).</span></div>
       <div className="legend-row"><span className="badge high">high</span><span>Risk weight — how heavily the control counts toward the score (low 1× / medium 2× / high 3×).</span></div>
       <div className="legend-row"><span className="badge ko">KNOCK-OUT</span><span>A critical control: a No/Unknown answer forces <strong>Tier 4 (blocked)</strong> regardless of the score.</span></div>
-      <div className="legend-row"><span className="badge src-auto">✓ auto</span><span>Answered from a cloud fact and accepted. <span className="badge src-suggested">confirm</span> = suggested from provider docs, you must confirm. <span className="badge src-manual">manual</span> = you answer it.</span></div>
+      <div className="legend-row"><span className="badge src-auto">✓ auto</span><span>Answered from a cloud fact and accepted. <span className="badge src-suggested">confirm</span> = suggested from provider docs, you must confirm. <span className="badge src-manual">manual</span> = you answer it. <span className="badge src-carried">carried</span> = adopted from an approved precedent review (same vendor &amp; terms).</span></div>
       <div className="legend-row"><span className="badge">data_privacy</span><span>NIST AI 600-1 <strong>Generative-AI risk categories</strong> this control addresses (hover any tag for its meaning).</span></div>
     </details>
   );
