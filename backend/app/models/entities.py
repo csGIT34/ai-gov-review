@@ -141,11 +141,18 @@ class Review(UUIDPKMixin, TimestampMixin, Base):
     # template edits never retroactively change what was signed off.
     snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
-    # Set when judgment answers were carried forward from an approved precedent
-    # review (same vendor + same governing terms) — the fast-track provenance.
-    precedent_review_id: Mapped[uuid.UUID | None] = mapped_column(
-        GUID(), ForeignKey("reviews.id"), nullable=True
-    )
+    # Set when judgment answers were carried forward from a stored precedent
+    # (same vendor + same governing terms) — the fast-track provenance.
+    # References the standalone precedents table, NOT another review: reviews
+    # stay deletable, and a precedent outlives the review it was minted from.
+    precedent_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+
+    # Point-in-time copy of the CSP data this review's auto/attested answers
+    # were derived from: the model's cloud facts and the platform attestation
+    # documents, captured when the review opened. Model.facts is refreshed on
+    # every re-discovery, so without this the evidence would drift under a
+    # decided review.
+    facts_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     model: Mapped["Model"] = relationship(back_populates="reviews")
     controls: Mapped[list["ControlResponse"]] = relationship(
@@ -241,6 +248,43 @@ class ApprovalDecision(UUIDPKMixin, TimestampMixin, Base):
     override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     review: Mapped["Review"] = relationship(back_populates="decisions")
+
+
+class Precedent(UUIDPKMixin, TimestampMixin, Base):
+    """A standalone, admin-managed snapshot minted when a review is approved.
+
+    The fast-track matches against THESE rows, not against review records — so
+    deleting a review never breaks the rubber stamp, and an admin can disable
+    or delete a precedent without touching the review history. Everything the
+    fast-track needs is denormalized here: the terms identity, the frozen
+    questionnaire version, and the carryable judgment answers themselves."""
+
+    __tablename__ = "precedents"
+
+    vendor: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    cloud: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Governing-terms identity ({id, label, url}) the answers were given under.
+    terms: Mapped[dict] = mapped_column(JSON, nullable=False)
+    questionnaire_version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Where it came from (display/provenance only — no FK, the review may go away).
+    model_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    model_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    decision_state: Mapped[str] = mapped_column(String(40), nullable=False)
+    tier: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_review_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("users.id"), nullable=True
+    )
+
+    # {control_key: {answer, evidence_url, evidence_note}} — the human-owned
+    # judgment answers a same-terms review may adopt.
+    answers: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    # Admin kill switch: a disabled precedent no longer fast-tracks anything.
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
 class GovernancePolicy(UUIDPKMixin, TimestampMixin, Base):

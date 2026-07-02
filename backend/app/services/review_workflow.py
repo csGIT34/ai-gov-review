@@ -43,6 +43,10 @@ def open_review(
     request_ip: str | None = None,
 ) -> Review:
     """Create a PENDING_REVIEW and materialize its control responses."""
+    from dataclasses import asdict
+
+    from app.services.attestations import lookup as attestation_lookup
+
     q = questionnaire or get_questionnaire()
     review = Review(
         model_id=model.id,
@@ -51,6 +55,21 @@ def open_review(
         trigger=trigger,
         opened_at=utcnow(),
         snapshot=q.as_snapshot(),
+        # Point-in-time copy of the CSP data the machine answers are derived
+        # from. Model.facts is overwritten on every re-discovery and the
+        # attestation registry is curated code — this freezes what THIS review
+        # actually saw, as documentation evidence.
+        facts_snapshot={
+            "captured_at": utcnow().isoformat(),
+            "cloud": model.cloud,
+            "vendor": model.vendor,
+            "resource_id": model.resource_id,
+            "cloud_facts": dict(model.facts or {}),
+            "attestations": {
+                key: asdict(att)
+                for key, att in attestation_lookup(model.cloud, model.vendor).items()
+            },
+        },
     )
     db.add(review)
     db.flush()  # assign review.id
@@ -137,10 +156,12 @@ def delete_review(
 
     Open (undecided) reviews: any reviewer — abandoned or duplicate reviews are
     clutter, not records. Decided reviews are governance records: only an admin
-    may delete one, a reason is mandatory, and a review that other reviews cite
-    as their fast-track precedent can never be deleted. The deletion itself is
-    audited (the review's existing audit entries are append-only and remain —
-    the hash chain is untouched)."""
+    may delete one and a reason is mandatory. Deleting a review never breaks
+    the fast-track: precedents are standalone snapshots — the precedent this
+    review minted survives (its source_review_id is detached). The deletion
+    itself is audited (the review's existing audit entries are append-only and
+    remain — the hash chain is untouched)."""
+    from app.models import Precedent
     from app.models.enums import DECISION_STATES
 
     if review.state in {s.value for s in DECISION_STATES}:
@@ -149,17 +170,11 @@ def delete_review(
         if not (reason or "").strip():
             raise ValidationError("Deleting a decided review requires a reason.")
 
-    dependents = list(
-        db.execute(
-            select(Review.id).where(Review.precedent_review_id == review.id)
-        ).scalars()
-    )
-    if dependents:
-        raise ConflictError(
-            f"This review is the precedent for {len(dependents)} fast-tracked "
-            "review(s) and cannot be deleted.",
-            details={"dependent_review_ids": [str(i) for i in dependents]},
-        )
+    # Detach (don't delete) any precedent minted from this review.
+    for p in db.execute(
+        select(Precedent).where(Precedent.source_review_id == review.id)
+    ).scalars():
+        p.source_review_id = None
 
     before = {
         "model_id": str(review.model_id),

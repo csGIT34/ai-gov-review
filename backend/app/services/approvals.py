@@ -134,10 +134,22 @@ def decide(
             "risk_score_id": str(score.id),
             "override": overridden_tier is not None,
             "overridden_tier": overridden_tier,
-            "precedent_review_id": (
-                str(review.precedent_review_id) if review.precedent_review_id else None
-            ),
+            "precedent_id": str(review.precedent_id) if review.precedent_id else None,
         },
         request_ip=request_ip,
     )
+
+    # An approval mints a standalone precedent snapshot so later same-terms
+    # models can rubber-stamp — even after this review record is deleted.
+    if decision in (Decision.APPROVE.value, Decision.APPROVE_WITH_CONDITIONS.value):
+        from app.services import precedent as precedent_svc
+
+        precedent_svc.mint_from_review(
+            db,
+            review=review,
+            tier=score.tier,
+            score=score.overall_score,
+            actor_id=current_user.id,
+            request_ip=request_ip,
+        )
     return record

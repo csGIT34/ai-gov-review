@@ -76,4 +76,30 @@ def seed_dev_data(db: Session) -> None:
     from app.services.policy import get_policy
 
     get_policy(db)
+    _backfill_precedents(db)
     db.commit()
+
+
+def _backfill_precedents(db: Session) -> None:
+    """Mint precedent rows for reviews approved before the standalone
+    precedents table existed. Idempotent (mint_from_review dedups on
+    source_review_id and skips terms-less models)."""
+    from app.models import Review, ReviewState
+    from app.services import precedent as precedent_svc
+    from app.services.review_workflow import current_score
+
+    approved = db.execute(
+        select(Review).where(
+            Review.state.in_(
+                (ReviewState.APPROVED.value, ReviewState.APPROVED_WITH_CONDITIONS.value)
+            )
+        )
+    ).scalars()
+    for review in approved:
+        score = current_score(db, review)
+        precedent_svc.mint_from_review(
+            db,
+            review=review,
+            tier=score.tier if score else None,
+            score=score.overall_score if score else None,
+        )

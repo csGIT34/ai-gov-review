@@ -74,7 +74,7 @@ def test_fasttrack_same_terms_carries_judgment_answers(client):
     p = client.get(f"{API}/reviews/{rid2}/precedent", headers=REVIEWER).json()
     assert p["available"] is True
     assert p["reasons"] == []
-    assert p["precedent"]["review_id"] == rid1
+    assert p["precedent"]["source_review_id"] == rid1
     assert p["model_terms"]["id"] == "anthropic-commercial-tos"
     assert p["precedent"]["terms"]["id"] == "anthropic-commercial-tos"
     # 6 suggested + 5 manual = 11 judgment controls; 8 auto + 4 attested
@@ -84,7 +84,7 @@ def test_fasttrack_same_terms_carries_judgment_answers(client):
     res = client.post(f"{API}/reviews/{rid2}/adopt-precedent", headers=REVIEWER)
     assert res.status_code == 200, res.text
     assert res.json()["carried_count"] == 11
-    assert res.json()["precedent_review_id"] == rid1
+    assert res.json()["precedent_id"]  # standalone precedent row, not a review id
 
     controls = _controls(client, rid2)
     carried = [c for c in controls if c["answer_source"] == "carried"]
@@ -96,7 +96,7 @@ def test_fasttrack_same_terms_carries_judgment_answers(client):
     assert all(c["answer"] == "yes" for c in carried)
 
     review = client.get(f"{API}/reviews/{rid2}", headers=REVIEWER).json()
-    assert review["precedent_review_id"] == rid1
+    assert review["precedent_id"]  # links to the precedents table
 
     # Straight to scoring: clean facts + approved footprint -> Tier 1, approvable.
     result = client.post(f"{API}/reviews/{rid2}/submit", headers=REVIEWER)
@@ -117,7 +117,7 @@ def test_rereview_of_same_model_uses_own_approved_review_as_precedent(client):
 
     p = client.get(f"{API}/reviews/{rid2}/precedent", headers=REVIEWER).json()
     assert p["available"] is True
-    assert p["precedent"]["review_id"] == rid1
+    assert p["precedent"]["source_review_id"] == rid1
 
     client.post(f"{API}/reviews/{rid2}/adopt-precedent", headers=REVIEWER)
     result = client.post(f"{API}/reviews/{rid2}/submit", headers=REVIEWER).json()
@@ -148,7 +148,7 @@ def test_first_of_vendor_has_no_precedent(client):
     rid = _open(client, "azure", "mistral", "Mistral-Large-2411")
     p = client.get(f"{API}/reviews/{rid}/precedent", headers=REVIEWER).json()
     assert p["available"] is False
-    assert any("No approved review" in r for r in p["reasons"])
+    assert any("No precedent exists" in r for r in p["reasons"])
     assert p["precedent"] is None
 
     res = client.post(f"{API}/reviews/{rid}/adopt-precedent", headers=REVIEWER)
@@ -224,11 +224,11 @@ def test_adoption_is_audited_and_decision_references_precedent(client):
     trail = client.get(f"{API}/audit/review/{rid2}", headers=ADMIN).json()
     adopted = [e for e in trail if e["action"] == "review_precedent_adopted"]
     assert len(adopted) == 1
-    assert adopted[0]["after"]["precedent_review_id"] == rid1
+    assert adopted[0]["after"]["precedent_source_review_id"] == rid1
     assert adopted[0]["after"]["carried_count"] == 11
 
     client.post(f"{API}/reviews/{rid2}/submit", headers=REVIEWER)
     _approve(client, rid2, 1)
     trail = client.get(f"{API}/audit/review/{rid2}", headers=ADMIN).json()
     decided = next(e for e in trail if e["action"] == "review_decided")
-    assert decided["after"]["precedent_review_id"] == rid1
+    assert decided["after"]["precedent_id"]  # decision records the precedent used

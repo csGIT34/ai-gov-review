@@ -263,13 +263,15 @@ class ReviewOut(ORMModel):
     opened_at: datetime
     submitted_at: datetime | None
     decided_at: datetime | None
-    precedent_review_id: uuid.UUID | None = None
+    precedent_id: uuid.UUID | None = None
 
 
 class ReviewDetailOut(ReviewOut):
     model: ModelOut
     controls: list[ControlOut]
     current_score: RiskScoreOut | None = None
+    # Point-in-time CSP data (cloud facts + attestation docs) captured at open.
+    facts_snapshot: dict | None = None
 
 
 class SubmitResultOut(Schema):
@@ -288,18 +290,20 @@ class ModelTermsOut(Schema):
 
 
 class PrecedentRefOut(Schema):
-    """The approved review a fast-track would carry answers from."""
+    """The stored precedent a fast-track would carry answers from."""
 
-    review_id: uuid.UUID
-    model_id: uuid.UUID
+    id: uuid.UUID
     model_name: str
     model_version: str | None
     cloud: str
+    vendor: str
     decision_state: str
     decided_at: datetime | None
     tier: int | None
     score: float | None
     terms: ModelTermsOut | None
+    # The review it was minted from, when that review still exists.
+    source_review_id: uuid.UUID | None = None
 
 
 class PrecedentOut(Schema):
@@ -313,9 +317,33 @@ class PrecedentOut(Schema):
 
 
 class AdoptResultOut(Schema):
-    precedent_review_id: uuid.UUID
+    precedent_id: uuid.UUID
     carried_keys: list[str]
     carried_count: int
+
+
+class PrecedentAdminOut(ORMModel):
+    """A stored precedent, as listed on the Admin page."""
+
+    id: uuid.UUID
+    created_at: datetime
+    vendor: str
+    cloud: str
+    terms: dict
+    questionnaire_version: int
+    model_name: str
+    model_version: str | None
+    decision_state: str
+    tier: int | None
+    score: float | None
+    decided_at: datetime | None
+    source_review_id: uuid.UUID | None
+    enabled: bool
+    answers: dict
+
+
+class PrecedentToggleIn(Schema):
+    enabled: bool
 
 
 # --- approvals -----------------------------------------------------------------

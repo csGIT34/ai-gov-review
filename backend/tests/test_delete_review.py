@@ -3,9 +3,11 @@
 Rules under test:
   * any reviewer may delete an OPEN (undecided) review
   * decided reviews: admin only + mandatory reason
-  * a review cited as another review's fast-track precedent is undeletable
+  * precedents are standalone: deleting a review detaches (never breaks) the
+    precedent it minted; admin can disable/delete precedents independently
   * deletion cascades (controls/scores), clears Model.current_review_id,
     is audited, and frees the model for a fresh review
+  * reviews freeze a point-in-time CSP facts + attestations snapshot
 """
 from __future__ import annotations
 
@@ -46,18 +48,76 @@ def test_decided_review_needs_admin_and_reason(client):
     assert deleted["before"]["state"] == "approved"
 
 
-def test_precedent_review_is_undeletable(client):
+def test_precedent_survives_review_deletion(client):
+    """The rubber stamp must not depend on review records: delete the approved
+    review and the standalone precedent still fast-tracks the next model."""
     rid1 = _approved_precedent(client, "gcp", "anthropic", "claude-opus-4-8")
-    rid2 = _open(client, "gcp", "anthropic", "claude-fable-5")
-    assert client.post(f"{API}/reviews/{rid2}/adopt-precedent", headers=REVIEWER).status_code == 200
 
-    res = client.delete(f"{API}/reviews/{rid1}?reason=cleanup", headers=ADMIN)
-    assert res.status_code == 409
-    assert rid2 in res.json()["details"]["dependent_review_ids"]
+    # A precedent row was minted at approval, pointing at its source review.
+    ps = client.get(f"{API}/precedents", headers=REVIEWER).json()
+    p = next(x for x in ps if x["source_review_id"] == rid1)
+    assert p["enabled"] is True
+    assert p["terms"]["id"] == "anthropic-commercial-tos"
+    assert len(p["answers"]) > 0
 
-    # delete the dependent first, then the precedent becomes deletable
-    assert client.delete(f"{API}/reviews/{rid2}", headers=REVIEWER).status_code == 204
+    # Delete the review the precedent came from — allowed, precedent detaches.
     assert client.delete(f"{API}/reviews/{rid1}?reason=cleanup", headers=ADMIN).status_code == 204
+    p2 = next(x for x in client.get(f"{API}/precedents", headers=REVIEWER).json()
+              if x["id"] == p["id"])
+    assert p2["source_review_id"] is None
+    assert p2["model_name"] == "claude-opus-4-8"  # provenance kept as data
+
+    # Fast-track still works from the surviving precedent.
+    rid2 = _open(client, "gcp", "anthropic", "claude-fable-5")
+    assessment = client.get(f"{API}/reviews/{rid2}/precedent", headers=REVIEWER).json()
+    assert assessment["available"] is True
+    assert assessment["precedent"]["id"] == p["id"]
+    res = client.post(f"{API}/reviews/{rid2}/adopt-precedent", headers=REVIEWER)
+    assert res.status_code == 200
+    # 11 of the stored answers land on carryable controls; the new review's
+    # auto + attested controls stay fresh and are never overwritten.
+    assert res.json()["carried_count"] == 11
+
+
+def test_disabled_precedent_blocks_fast_track(client):
+    rid1 = _approved_precedent(client, "gcp", "anthropic", "claude-opus-4-8")
+    p = next(x for x in client.get(f"{API}/precedents", headers=ADMIN).json()
+             if x["source_review_id"] == rid1)
+
+    # Reviewer cannot toggle; admin can.
+    assert client.patch(f"{API}/precedents/{p['id']}", headers=REVIEWER,
+                        json={"enabled": False}).status_code == 403
+    assert client.patch(f"{API}/precedents/{p['id']}", headers=ADMIN,
+                        json={"enabled": False}).json()["enabled"] is False
+
+    rid2 = _open(client, "gcp", "anthropic", "claude-fable-5")
+    a = client.get(f"{API}/reviews/{rid2}/precedent", headers=REVIEWER).json()
+    assert a["available"] is False
+    assert client.post(f"{API}/reviews/{rid2}/adopt-precedent", headers=REVIEWER).status_code == 409
+
+    # Re-enable -> fast-track is back; both toggles are audited.
+    client.patch(f"{API}/precedents/{p['id']}", headers=ADMIN, json={"enabled": True})
+    assert client.get(f"{API}/reviews/{rid2}/precedent", headers=REVIEWER).json()["available"] is True
+    trail = client.get(f"{API}/audit/precedent/{p['id']}", headers=ADMIN).json()
+    actions = [e["action"] for e in trail]
+    assert "precedent_disabled" in actions and "precedent_enabled" in actions
+
+
+def test_admin_deletes_precedent_detaches_adopters(client):
+    rid1 = _approved_precedent(client, "gcp", "anthropic", "claude-opus-4-8")
+    p = next(x for x in client.get(f"{API}/precedents", headers=ADMIN).json()
+             if x["source_review_id"] == rid1)
+    rid2 = _open(client, "gcp", "anthropic", "claude-fable-5")
+    client.post(f"{API}/reviews/{rid2}/adopt-precedent", headers=REVIEWER)
+
+    assert client.delete(f"{API}/precedents/{p['id']}", headers=REVIEWER).status_code == 403
+    assert client.delete(f"{API}/precedents/{p['id']}", headers=ADMIN).status_code == 204
+
+    # The adopting review keeps its carried answers but drops the dangling link.
+    review = client.get(f"{API}/reviews/{rid2}", headers=REVIEWER).json()
+    assert review["precedent_id"] is None
+    carried = [c for c in review["controls"] if c["answer_source"] == "carried"]
+    assert len(carried) > 0
 
 
 def test_delete_clears_current_review_pointer(client):
@@ -69,3 +129,16 @@ def test_delete_clears_current_review_pointer(client):
     model = next(m for m in client.get(f"{API}/models", headers=REVIEWER).json()
                  if m["model_name"] == "gpt-4o")
     assert model["current_review_id"] != rid  # pointer no longer dangles
+
+
+def test_review_freezes_point_in_time_csp_snapshot(client):
+    """A review documents the CSP data its machine answers came from — even if
+    the model's live facts change later, the review's evidence doesn't drift."""
+    rid = _open(client, "azure", "openai", "gpt-4o")
+    review = client.get(f"{API}/reviews/{rid}", headers=REVIEWER).json()
+    snap = review["facts_snapshot"]
+    assert snap["cloud"] == "azure" and snap["vendor"] == "openai"
+    assert snap["captured_at"]
+    assert snap["cloud_facts"]["regions"]           # the cloud posture seen at open
+    att = snap["attestations"]
+    assert "data_handling" in att and att["data_handling"]["evidence_url"].startswith("https://")

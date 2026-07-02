@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { ApiError, FrameworkStatus, Policy, UpdateCheck, api } from "../api";
+import { Link } from "react-router-dom";
+import { ApiError, FrameworkStatus, Policy, PrecedentRow, UpdateCheck, api } from "../api";
+import { TierBadge } from "../ui";
 
 const CLOUDS = ["azure", "gcp"] as const;
 
@@ -15,6 +17,8 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
   const [reviewNotes, setReviewNotes] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [precedents, setPrecedents] = useState<PrecedentRow[]>([]);
+  const [precDel, setPrecDel] = useState<string | null>(null); // armed for delete
 
   function loadFramework() {
     api.get<FrameworkStatus>("/framework").then(setFw).catch(() => {});
@@ -29,7 +33,32 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
       .then((p) => setRegions({ azure: p.approved_regions.azure || [], gcp: p.approved_regions.gcp || [] }))
       .catch((e) => setError(e.message));
     loadFramework();
+    api.get<PrecedentRow[]>("/precedents").then(setPrecedents).catch(() => {});
   }, []);
+
+  async function togglePrecedent(p: PrecedentRow) {
+    setError(null);
+    try {
+      const updated = await api.patch<PrecedentRow>(`/precedents/${p.id}`, { enabled: !p.enabled });
+      setPrecedents((prev) => prev.map((x) => (x.id === p.id ? updated : x)));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    }
+  }
+
+  async function deletePrecedent(p: PrecedentRow) {
+    if (precDel !== p.id) {
+      setPrecDel(p.id); // first click arms, second deletes
+      return;
+    }
+    setPrecDel(null); setError(null);
+    try {
+      await api.del(`/precedents/${p.id}`);
+      setPrecedents((prev) => prev.filter((x) => x.id !== p.id));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    }
+  }
 
   async function markReviewed() {
     setError(null); setMsg(null);
@@ -170,6 +199,77 @@ export default function Admin({ isAdmin }: { isAdmin: boolean }) {
         <div className="row" style={{ marginTop: "1rem" }}>
           <button onClick={savePolicy}>Save policy</button>
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Precedents (rubber-stamp sources)</h2>
+        <p className="muted">
+          Minted automatically when a review is approved; standalone records, independent of the
+          review they came from (deleting a review never breaks these). A later model from the
+          same vendor under the <strong>same governing terms</strong> can adopt a precedent's
+          judgment answers. <strong>Disable</strong> stops future fast-tracks (reversible);{" "}
+          <strong>delete</strong> removes it entirely. Reviews that already adopted keep their
+          answers either way.
+        </p>
+        {precedents.length === 0 ? (
+          <span className="muted">No precedents yet — approve a review to mint one.</span>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Vendor</th>
+                <th>From model</th>
+                <th>Terms</th>
+                <th>Tier</th>
+                <th>Answers</th>
+                <th>Decided</th>
+                <th>Source review</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {precedents.map((p) => (
+                <tr key={p.id} style={p.enabled ? undefined : { opacity: 0.55 }}>
+                  <td>{p.vendor} <span className="muted">({p.cloud})</span></td>
+                  <td>{p.model_name}{p.model_version ? ` v${p.model_version}` : ""}</td>
+                  <td>
+                    {p.terms?.url
+                      ? <a href={p.terms.url} target="_blank" rel="noreferrer" title={p.terms.id || ""}>{p.terms.label || p.terms.id} ↗</a>
+                      : (p.terms?.label || p.terms?.id || "—")}
+                  </td>
+                  <td><TierBadge tier={p.tier} /></td>
+                  <td>{Object.keys(p.answers || {}).length}</td>
+                  <td className="muted">{fmt(p.decided_at)}</td>
+                  <td>
+                    {p.source_review_id
+                      ? <Link to={`/reviews/${p.source_review_id}`}>view ↗</Link>
+                      : <span className="muted" title="The source review was deleted; the precedent stands on its own.">deleted</span>}
+                  </td>
+                  <td>
+                    <button
+                      className={p.enabled ? "secondary row-del" : "row-del"}
+                      title={p.enabled ? "Disable — stop future fast-tracks from this precedent (reversible)" : "Re-enable fast-tracks from this precedent"}
+                      onClick={() => togglePrecedent(p)}
+                    >
+                      {p.enabled ? "enabled ✓" : "disabled"}
+                    </button>
+                  </td>
+                  <td>
+                    <button
+                      className={precDel === p.id ? "danger row-del" : "secondary row-del"}
+                      title={precDel === p.id ? "Click again to permanently delete this precedent" : "Delete this precedent"}
+                      onMouseLeave={() => precDel === p.id && setPrecDel(null)}
+                      onClick={() => deletePrecedent(p)}
+                    >
+                      {precDel === p.id ? "confirm ✕" : "✕"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

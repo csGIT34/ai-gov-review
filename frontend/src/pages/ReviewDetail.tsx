@@ -70,18 +70,18 @@ export default function ReviewDetail() {
   // prefill the justification with the precedent reference (approver may edit).
   // Must stay above the early returns below — hooks run on every render.
   useEffect(() => {
-    if (d?.state === "scored" && d.precedent_review_id && prec?.precedent) {
+    if (d?.state === "scored" && d.precedent_id && prec?.precedent) {
       const p = prec.precedent;
       setJustification((j) =>
         j ||
         `Approved per precedent: ${p.model_name}${p.model_version ? ` v${p.model_version}` : ""} ` +
-        `(review ${p.review_id.slice(0, 8)}, ${p.decision_state.replace(/_/g, " ")}` +
+        `(precedent ${p.id.slice(0, 8)}, ${p.decision_state.replace(/_/g, " ")}` +
         `${p.tier ? `, Tier ${p.tier}` : ""}) under identical governing terms` +
         `${p.terms?.label ? ` (${p.terms.label})` : ""}. ` +
         `Cloud-fact controls were re-evaluated fresh for this model.`
       );
     }
-  }, [d?.state, d?.precedent_review_id, prec]);
+  }, [d?.state, d?.precedent_id, prec]);
 
   if (error && !d) return <div className="err">{error}</div>;
   if (!d) return <div className="muted">Loading…</div>;
@@ -233,10 +233,12 @@ export default function ReviewDetail() {
           {d.model.regions.length ? d.model.regions.join(", ") : "—"}
         </span>
         <span className="muted" style={{ fontSize: "0.75rem" }}>{d.model.resource_id}</span>
-        {d.precedent_review_id && (
+        {d.precedent_id && (
           <span>
-            <span className="badge src-carried">fast-tracked</span>{" "}
-            <Link to={`/reviews/${d.precedent_review_id}`}>precedent review ↗</Link>
+            <span className="badge src-carried" title="Judgment answers were adopted from a stored precedent (see Admin → Precedents).">fast-tracked</span>
+            {prec?.precedent?.source_review_id && (
+              <> <Link to={`/reviews/${prec.precedent.source_review_id}`}>source review ↗</Link></>
+            )}
           </span>
         )}
       </div>
@@ -244,7 +246,7 @@ export default function ReviewDetail() {
       {error && <div className="err">{error}</div>}
       {msg && <div className="ok">{msg}</div>}
 
-      {editable && !d.precedent_review_id && prec?.available && prec.precedent && (
+      {editable && !d.precedent_id && prec?.available && prec.precedent && (
         <div className="card precedent">
           <h3>⚡ Fast-track available — same vendor, same terms</h3>
           <div>
@@ -266,7 +268,7 @@ export default function ReviewDetail() {
         </div>
       )}
 
-      {editable && !d.precedent_review_id && prec && !prec.available && prec.reasons.length > 0 && (
+      {editable && !d.precedent_id && prec && !prec.available && prec.reasons.length > 0 && (
         <div className="card precedent blocked">
           <h3>Full review required — no usable precedent</h3>
           {prec.reasons.map((r, i) => (
@@ -463,6 +465,22 @@ export default function ReviewDetail() {
               {decision.conditions && <div className="muted">Conditions: {decision.conditions}</div>}
               <div className="muted" style={{ marginTop: "0.4rem" }}>{decision.justification}</div>
               <div className="muted" style={{ fontSize: "0.75rem", marginTop: "0.3rem" }}>{fmtDate(decision.decided_at)}</div>
+            </div>
+          )}
+
+          {d.facts_snapshot && (
+            <div className="card">
+              <details>
+                <summary style={{ cursor: "pointer", color: "var(--accent)", fontWeight: 600 }}>
+                  Point-in-time CSP snapshot
+                </summary>
+                <p className="muted" style={{ fontSize: "0.78rem" }}>
+                  The cloud facts and platform attestation documents this review's machine answers
+                  were derived from, frozen at {fmtDate(d.facts_snapshot.captured_at)}. Live model
+                  facts may change on re-discovery; this record doesn't.
+                </p>
+                <pre className="snapshot">{JSON.stringify(d.facts_snapshot, null, 2)}</pre>
+              </details>
             </div>
           )}
 

@@ -157,9 +157,16 @@ judgment answers (procurement vetting, oversight process, incident runbook,
 doc-based confirmations) don't change between them. So once **one** model is fully
 reviewed and approved, later models can be fast-tracked:
 
+- **Standalone records:** approving a review automatically **mints a precedent
+  row** (the `precedents` table) — a snapshot of the vendor, governing terms,
+  questionnaire version and the human judgment answers. The fast-track matches
+  against these rows, **not** against review records, so deleting a review never
+  breaks the rubber stamp. Admins manage precedents on the **Admin page**:
+  disable one (kill switch, reversible) or delete it; reviews that already
+  adopted keep their answers.
 - **Match rule:** same **vendor** + same **governing terms** (`facts.terms.id` — the
-  marketplace agreement / publisher license on the resource) + an **approved**
-  precedent review + the same questionnaire version. All checks are enforced
+  marketplace agreement / publisher license on the resource) + an **enabled**
+  precedent + the same questionnaire version. All checks are enforced
   server-side on adopt; the UI only reflects them.
 - **Adopt** carries the precedent's judgment answers into the new review, marked
   `carried` (purple badge). One click, then submit → score → approve. The approval
@@ -173,13 +180,24 @@ reviewed and approved, later models can be fast-tracked:
   the reason shown. Example in the stub: `claude-fable-5` shares the Anthropic
   commercial ToS with `claude-opus-4-8` (fast-track ok), but `claude-mythos-5`
   is under a restricted-availability addendum → full review, explicitly explained.
-- **Provenance:** `review.precedent_review_id`, per-control `answer_source="carried"`,
+- **Provenance:** `review.precedent_id`, per-control `answer_source="carried"`,
   a `review_precedent_adopted` audit entry, and the final decision's audit entry
   references the precedent. Carried answers can still be overridden (they become
   `human` again).
 
 Where it lives: `backend/app/services/precedent.py`,
-`GET/POST /api/v1/reviews/{id}/precedent|adopt-precedent`.
+`GET/POST /api/v1/reviews/{id}/precedent|adopt-precedent`,
+`GET/PATCH/DELETE /api/v1/precedents` (admin management).
+
+## Point-in-time CSP snapshot
+
+Every review freezes, at open time, a copy of the CSP data its machine answers
+came from — the model's **cloud facts** (regions, network/auth posture,
+encryption, filters, terms) and the **platform attestation documents** used
+(`review.facts_snapshot`, shown as a collapsible panel on the review page).
+`Model.facts` is overwritten on every re-discovery and the attestation registry
+is curated code that evolves; the snapshot documents exactly what THIS review
+saw, so the evidence behind a decision never drifts after the fact.
 
 ## Stack
 

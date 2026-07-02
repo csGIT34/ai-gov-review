@@ -203,20 +203,20 @@ def answer_control(
 
 def _precedent_out(db: Session, a: precedent_svc.Assessment) -> PrecedentOut:
     ref = None
-    if a.precedent is not None and a.precedent_model is not None:
-        score = wf.current_score(db, a.precedent)
-        terms = precedent_svc.terms_of(a.precedent_model)
+    if a.precedent is not None:
+        p = a.precedent
         ref = PrecedentRefOut(
-            review_id=a.precedent.id,
-            model_id=a.precedent_model.id,
-            model_name=a.precedent_model.model_name,
-            model_version=a.precedent_model.model_version,
-            cloud=a.precedent_model.cloud,
-            decision_state=a.precedent.state,
-            decided_at=a.precedent.decided_at,
-            tier=score.tier if score else None,
-            score=score.overall_score if score else None,
-            terms=ModelTermsOut(**terms) if terms else None,
+            id=p.id,
+            model_name=p.model_name,
+            model_version=p.model_version,
+            cloud=p.cloud,
+            vendor=p.vendor,
+            decision_state=p.decision_state,
+            decided_at=p.decided_at,
+            tier=p.tier,
+            score=p.score,
+            terms=ModelTermsOut(**p.terms) if p.terms else None,
+            source_review_id=p.source_review_id,
         )
     return PrecedentOut(
         available=a.available,
@@ -253,7 +253,7 @@ def adopt_precedent(
     )
     db.commit()
     return AdoptResultOut(
-        precedent_review_id=assessment.precedent.id,
+        precedent_id=assessment.precedent.id,
         carried_keys=carried,
         carried_count=len(carried),
     )

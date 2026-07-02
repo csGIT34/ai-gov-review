@@ -6,20 +6,26 @@ doc-based confirmations) rarely change between them. Once ONE model has been
 fully reviewed and approved, a later model under the SAME vendor and the SAME
 governing terms may adopt those judgment answers and go straight to scoring.
 
+Precedents are STANDALONE records (the `precedents` table), minted
+automatically when a review is approved. The fast-track matches against those
+rows, not against review records — deleting a review never breaks the rubber
+stamp, and admins manage precedents (disable / delete) from the Admin page.
+
 What adoption deliberately does NOT do:
-  * auto controls are never carried — residency, network exposure, encryption,
-    filters, version pinning are recomputed fresh from THIS model's cloud
-    facts, so a model with a worse footprint still trips its own gates.
+  * auto/attested controls are never carried — residency, network exposure,
+    encryption, filters, version pinning and platform attestations are
+    recomputed fresh from THIS model's cloud facts, so a model with a worse
+    footprint still trips its own gates.
   * a different terms id (e.g. a restricted-availability variant with its own
     addendum) blocks the fast-track entirely — different terms are a new
     governance object and get a full review.
   * scoring, tiers and the approval gate are unchanged. Adoption only pre-fills
     answers, with full provenance: answer_source="carried",
-    review.precedent_review_id, and an audit entry.
+    review.precedent_id, and an audit entry.
 
 Precedent eligibility (all must hold, evaluated server-side on adopt):
-  vendor match · terms identity present and equal · precedent decided
-  approve/approve_with_conditions · same questionnaire version.
+  precedent enabled · vendor match · terms identity present and equal ·
+  same questionnaire version.
 """
 from __future__ import annotations
 
@@ -29,16 +35,11 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import ControlResponse, Model, Review, ReviewState, utcnow
+from app.models import Model, Precedent, Review, ReviewState, utcnow
 from app.models.enums import AnswerSource
 from app.services import audit
 from app.services.errors import ConflictError
 from app.services.review_workflow import _ANSWERABLE_STATES
-
-_APPROVED_STATES = (
-    ReviewState.APPROVED.value,
-    ReviewState.APPROVED_WITH_CONDITIONS.value,
-)
 
 # Sources a precedent answer may be carried FROM (reviewer-attested answers).
 _CARRYABLE_FROM = {AnswerSource.HUMAN.value, AnswerSource.CARRIED.value}
@@ -61,49 +62,110 @@ class Assessment:
     available: bool = False
     reasons: list[str] = field(default_factory=list)
     model_terms: dict | None = None
-    precedent: Review | None = None  # best candidate examined, even when blocked
-    precedent_model: Model | None = None
+    precedent: Precedent | None = None  # best candidate examined, even when blocked
     carryable_keys: list[str] = field(default_factory=list)
 
 
-def _approved_reviews_for_vendor(db: Session, vendor: str, exclude_review_id: uuid.UUID) -> list[Review]:
-    """Approved reviews for the vendor, most recently decided first."""
+def mint_from_review(
+    db: Session,
+    *,
+    review: Review,
+    tier: int | None,
+    score: float | None,
+    actor_id: uuid.UUID | None = None,
+    request_ip: str | None = None,
+) -> Precedent | None:
+    """Snapshot an approved review into a standalone Precedent row.
+
+    Called from the approval flow. Fails soft (returns None) when the model has
+    no terms identity — such models can never be matched, so there is nothing
+    to store — or when this review already minted one (idempotent re-runs)."""
+    model = review.model
+    terms = terms_of(model)
+    if terms is None:
+        return None
+    existing = db.execute(
+        select(Precedent).where(Precedent.source_review_id == review.id)
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    answers = {
+        c.control_key: {
+            "answer": c.answer,
+            "evidence_url": c.evidence_url,
+            "evidence_note": c.evidence_note,
+        }
+        for c in review.controls
+        if c.answer is not None and c.answer_source in _CARRYABLE_FROM
+    }
+    if not answers:
+        return None
+
+    p = Precedent(
+        vendor=model.vendor,
+        cloud=model.cloud,
+        terms=terms,
+        questionnaire_version=(review.snapshot or {}).get("version"),
+        model_name=model.model_name,
+        model_version=model.model_version,
+        decision_state=review.state,
+        tier=tier,
+        score=score,
+        decided_at=review.decided_at,
+        source_review_id=review.id,
+        created_by_id=actor_id,
+        answers=answers,
+        enabled=True,
+    )
+    db.add(p)
+    db.flush()
+    audit.record(
+        db,
+        action="precedent_created",
+        entity_type="precedent",
+        entity_id=p.id,
+        actor_id=actor_id,
+        after={
+            "vendor": p.vendor,
+            "model_name": p.model_name,
+            "terms_id": terms.get("id"),
+            "questionnaire_version": p.questionnaire_version,
+            "answer_count": len(answers),
+            "source_review_id": str(review.id),
+        },
+        request_ip=request_ip,
+    )
+    return p
+
+
+def _candidates(db: Session, vendor: str) -> list[Precedent]:
+    """Enabled precedents for the vendor, most recently decided first."""
     stmt = (
-        select(Review)
-        .join(Model, Review.model_id == Model.id)
-        .where(
-            Model.vendor == vendor,
-            Review.state.in_(_APPROVED_STATES),
-            Review.id != exclude_review_id,
-        )
-        .order_by(Review.decided_at.desc())
+        select(Precedent)
+        .where(Precedent.vendor == vendor, Precedent.enabled.is_(True))
+        .order_by(Precedent.decided_at.desc())
     )
     return list(db.execute(stmt).scalars())
 
 
-def _carryable_keys(review: Review, precedent: Review) -> list[str]:
+def _carryable_keys(review: Review, precedent: Precedent) -> list[str]:
     """Control keys whose judgment answer can be carried from the precedent."""
-    attested = {
-        c.control_key: c
-        for c in precedent.controls
-        if c.answer is not None and c.answer_source in _CARRYABLE_FROM
-    }
     return [
         c.control_key
         for c in review.controls
-        if c.answer_source in _CARRYABLE_ONTO and c.control_key in attested
+        if c.answer_source in _CARRYABLE_ONTO and c.control_key in (precedent.answers or {})
     ]
 
 
 def find_precedent(db: Session, review: Review) -> Assessment:
-    """Evaluate whether this review can fast-track from an approved precedent."""
+    """Evaluate whether this review can fast-track from a stored precedent."""
     a = Assessment()
     model = review.model
     a.model_terms = terms_of(model)
 
-    if review.precedent_review_id is not None:
-        a.precedent = db.get(Review, review.precedent_review_id)
-        a.precedent_model = a.precedent.model if a.precedent else None
+    if review.precedent_id is not None:
+        a.precedent = db.get(Precedent, review.precedent_id)
         a.reasons.append("Precedent answers were already adopted into this review.")
         return a
 
@@ -113,10 +175,10 @@ def find_precedent(db: Session, review: Review) -> Assessment:
         )
         return a
 
-    candidates = _approved_reviews_for_vendor(db, model.vendor, review.id)
+    candidates = _candidates(db, model.vendor)
     if not candidates:
         a.reasons.append(
-            f"No approved review exists yet for vendor '{model.vendor}' — "
+            f"No precedent exists yet for vendor '{model.vendor}' — "
             "the first model from a vendor gets the full review."
         )
         return a
@@ -128,37 +190,30 @@ def find_precedent(db: Session, review: Review) -> Assessment:
         )
         return a
 
-    # Prefer the most recent approved review under the SAME terms.
-    match: Review | None = None
-    for cand in candidates:
-        cand_terms = terms_of(cand.model)
-        if cand_terms and cand_terms["id"] == a.model_terms["id"]:
-            match = cand
-            break
-
+    # Prefer the most recently decided precedent under the SAME terms.
+    match = next(
+        (p for p in candidates if (p.terms or {}).get("id") == a.model_terms["id"]), None
+    )
     if match is None:
         newest = candidates[0]
-        newest_terms = terms_of(newest.model)
         a.precedent = newest
-        a.precedent_model = newest.model
         a.reasons.append(
             f"Governing terms differ: this model is under "
-            f"'{a.model_terms.get('label') or a.model_terms['id']}', but the approved "
-            f"precedent ({newest.model.model_name}) is under "
-            f"'{(newest_terms or {}).get('label') or (newest_terms or {}).get('id') or 'unknown terms'}'. "
+            f"'{a.model_terms.get('label') or a.model_terms['id']}', but the stored "
+            f"precedent ({newest.model_name}) is under "
+            f"'{(newest.terms or {}).get('label') or (newest.terms or {}).get('id') or 'unknown terms'}'. "
             "Different terms require a full review."
         )
         return a
 
     a.precedent = match
-    a.precedent_model = match.model
 
     mine = (review.snapshot or {}).get("version")
-    theirs = (match.snapshot or {}).get("version")
-    if mine != theirs:
+    if mine != match.questionnaire_version:
         a.reasons.append(
-            f"The precedent was reviewed under questionnaire v{theirs}, but this review "
-            f"uses v{mine} — answers cannot be carried across questionnaire versions."
+            f"The precedent was recorded under questionnaire v{match.questionnaire_version}, "
+            f"but this review uses v{mine} — answers cannot be carried across "
+            "questionnaire versions."
         )
         return a
 
@@ -188,26 +243,22 @@ def adopt(
     precedent = a.precedent
     assert precedent is not None  # available=True guarantees a matched precedent
 
-    attested: dict[str, ControlResponse] = {
-        c.control_key: c
-        for c in precedent.controls
-        if c.answer is not None and c.answer_source in _CARRYABLE_FROM
-    }
+    stored: dict[str, dict] = precedent.answers or {}
     carried: list[str] = []
     now = utcnow()
     for c in review.controls:
-        src = attested.get(c.control_key)
+        src = stored.get(c.control_key)
         if c.answer_source not in _CARRYABLE_ONTO or src is None:
-            continue  # auto controls (and anything human-touched) stay fresh
-        c.answer = src.answer
-        c.evidence_url = src.evidence_url
-        c.evidence_note = src.evidence_note
+            continue  # auto/attested controls (and anything human-touched) stay fresh
+        c.answer = src["answer"]
+        c.evidence_url = src.get("evidence_url")
+        c.evidence_note = src.get("evidence_note")
         c.answer_source = AnswerSource.CARRIED.value
         c.answered_by_id = actor_id
         c.answered_at = now
         carried.append(c.control_key)
 
-    review.precedent_review_id = precedent.id
+    review.precedent_id = precedent.id
     if review.state == ReviewState.PENDING_REVIEW.value:
         review.state = ReviewState.IN_REVIEW.value
 
@@ -219,8 +270,11 @@ def adopt(
         entity_id=review.id,
         actor_id=actor_id,
         after={
-            "precedent_review_id": str(precedent.id),
-            "precedent_model": a.precedent_model.model_name if a.precedent_model else None,
+            "precedent_id": str(precedent.id),
+            "precedent_model": precedent.model_name,
+            "precedent_source_review_id": (
+                str(precedent.source_review_id) if precedent.source_review_id else None
+            ),
             "terms_id": (a.model_terms or {}).get("id"),
             "carried": carried,
             "carried_count": len(carried),

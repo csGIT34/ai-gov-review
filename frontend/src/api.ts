@@ -180,7 +180,7 @@ export interface Review {
   opened_at: string;
   submitted_at: string | null;
   decided_at: string | null;
-  precedent_review_id: string | null;
+  precedent_id: string | null; // links to the standalone precedents table
 }
 
 export interface ModelTerms {
@@ -190,16 +190,17 @@ export interface ModelTerms {
 }
 
 export interface PrecedentRef {
-  review_id: string;
-  model_id: string;
+  id: string;
   model_name: string;
   model_version: string | null;
   cloud: string;
+  vendor: string;
   decision_state: string;
   decided_at: string | null;
   tier: number | null;
   score: number | null;
   terms: ModelTerms | null;
+  source_review_id: string | null;
 }
 
 export interface Precedent {
@@ -212,15 +213,43 @@ export interface Precedent {
 }
 
 export interface AdoptResult {
-  precedent_review_id: string;
+  precedent_id: string;
   carried_keys: string[];
   carried_count: number;
+}
+
+export interface PrecedentRow {
+  id: string;
+  created_at: string;
+  vendor: string;
+  cloud: string;
+  terms: ModelTerms;
+  questionnaire_version: number;
+  model_name: string;
+  model_version: string | null;
+  decision_state: string;
+  tier: number | null;
+  score: number | null;
+  decided_at: string | null;
+  source_review_id: string | null;
+  enabled: boolean;
+  answers: Record<string, { answer: string; evidence_url: string | null; evidence_note: string | null }>;
+}
+
+export interface FactsSnapshot {
+  captured_at: string;
+  cloud: string;
+  vendor: string;
+  resource_id: string;
+  cloud_facts: Record<string, unknown>;
+  attestations: Record<string, { answer: string; rationale: string; evidence_url: string }>;
 }
 
 export interface ReviewDetail extends Review {
   model: ModelOut;
   controls: Control[];
   current_score: RiskScore | null;
+  facts_snapshot: FactsSnapshot | null;
 }
 
 export interface Decision {
