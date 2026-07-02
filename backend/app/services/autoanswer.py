@@ -122,6 +122,13 @@ def _safety_filters(f: dict, vendor: str, docs: dict) -> AutoResult:
     cf = f.get("content_filter")
     if cf:
         return _auto("yes", f"Content-safety policy '{cf}' is attached to the endpoint.")
+    mixed = f.get("content_filter_mixed")
+    if mixed:
+        return _auto(
+            "no",
+            f"Content-safety policies differ across regional deployments ({', '.join(mixed)}); "
+            "posture is not uniform across the footprint.",
+        )
     return _auto("no", "No content-safety / responsible-AI policy is attached to the endpoint.")
 
 
@@ -151,7 +158,9 @@ def _monitoring(f: dict, vendor: str, docs: dict) -> AutoResult:
     on = bool(f.get("diagnostic_settings"))
     return _auto(
         "yes" if on else "no",
-        "Diagnostic/logging sink is configured." if on else "No diagnostic/logging sink is configured.",
+        "At least one enabled log category is routed to a diagnostic sink."
+        if on
+        else "No diagnostic sink with enabled log categories is configured.",
     )
 
 

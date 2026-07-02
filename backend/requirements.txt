@@ -23,6 +23,6 @@ argon2-cffi==25.1.0
 pytest==9.1.1
 httpx==0.28.1
 
-# Cloud discovery SDKs are added in M5/M6 (kept out of the core image for now):
-#   azure-identity, azure-mgmt-cognitiveservices, azure-mgmt-resourcegraph
-#   google-cloud-asset, google-cloud-aiplatform, google-auth
+# Cloud discovery (M5). Azure uses direct ARM REST GETs over httpx; only the
+# credential chain needs an SDK. GCP (M6) will add google-auth.
+azure-identity==1.25.3

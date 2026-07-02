@@ -24,6 +24,8 @@ an **immutable audit trail**.
 - **Pull-based discovery.** No background polling. When a reviewer starts a review,
   cascading dropdowns (cloud source → vendor → model) are populated on demand from
   the cloud APIs (cached). Read-only — the app never writes to any cloud.
+  Azure discovery can run **live** (see [Live Azure discovery](#live-azure-discovery-m5));
+  GCP is stubbed until M6.
 - **Auto-answer.** When the review opens, the engine pre-answers every control it can
   from the model's cloud facts, so the reviewer only handles judgment calls. See
   [How auto-answer works](#how-auto-answer-works) below.
@@ -165,6 +167,36 @@ docker compose up --build
 
 > No Compose plugin? Build/run the three containers directly with `docker build` +
 > `docker run` on a shared `docker network` — the compose file documents the wiring.
+
+## Live Azure discovery (M5)
+
+Set two env vars on the API and the Azure dropdowns read your real subscription
+instead of the stub (GCP stays stubbed until M6):
+
+```bash
+AZURE_DISCOVERY=live
+AZURE_SUBSCRIPTION_ID=<subscription guid>
+```
+
+What it reads (strictly **read-only** — ARM GETs only, **Reader** role suffices):
+Cognitive Services accounts of kind `OpenAI`/`AIServices`, their model
+**deployments** (model name/version/format, RAI content-filter policy, version
+upgrade option), account posture (public network access, local key auth, CMK
+encryption), and diagnostic-settings presence. Per-region deployments of the same
+model are collapsed into **one logical model** whose `regions[]` footprint feeds
+residency, and whose facts merge **fail-closed** — the worst posture anywhere in
+the footprint wins, so one weak regional deployment can't hide behind a hardened one.
+Governing terms (`facts.terms`) are derived from the model publisher's standard
+Azure terms; vendors without a known terms mapping get none, which disables the
+precedent fast-track (fail closed).
+
+**Credentials (keyless, in order):**
+
+1. `AZURE_ACCESS_TOKEN` — a short-lived bearer for containerized dev:
+   `-e AZURE_ACCESS_TOKEN="$(az account get-access-token --query accessToken -o tsv)"`
+   (expires in ~1h; restart with a fresh one — never bake it into an image).
+2. `DefaultAzureCredential` — `az login` when running the backend locally;
+   **managed identity / workload identity** in production. No secrets in git or images.
 
 ## Quickstart (local backend, no Docker)
 

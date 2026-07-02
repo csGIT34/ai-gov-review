@@ -26,6 +26,11 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://aigov:changeme-local-only@db:5432/aigov}
       API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
       DEV_AUTH_ENABLED: ${DEV_AUTH_ENABLED:-true}
+      # Live Azure discovery (M5) — read-only; Reader role suffices. See README.
+      AZURE_DISCOVERY: ${AZURE_DISCOVERY:-stub}
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
+      # Short-lived dev bearer (az account get-access-token); managed identity in prod.
+      AZURE_ACCESS_TOKEN: ${AZURE_ACCESS_TOKEN:-}
     ports:
       - "8000:8000"   # Swagger at http://localhost:8000/docs
     networks: [backend]
